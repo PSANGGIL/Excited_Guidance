@@ -35,7 +35,7 @@ predicts the final structure while receiving `y_S1` as a condition.
 The default total loss is:
 
 ```text
-L_total = 3.0 L_x + 0.4 L_a + 1.0 L_c + 2.0 L_e
+L_total = 3.0 L_x + 0.4 L_a + 1.0 L_c + 2.0 L_e + 0.05 L_valence
 ```
 
 ### Coordinate term
@@ -61,6 +61,16 @@ only on entries that are still masked and need reconstruction.
 
 If an entire modality has no masked entries in a batch, `_safe_feature_loss`
 returns differentiable zero instead of NaN.
+
+### Valence regularization
+
+The optional `L_valence` term computes each atom's expected bond-order valence
+from the model's endpoint bond probabilities and penalizes log-scaled squared
+overflow over the ground-truth atom/charge valence cap. Log scaling prevents the
+O(N^2) candidate edges of a complete graph from dominating early training and
+creating a new all-no-bond bias. It changes learned bond logits but does not edit
+generated molecules. The example configuration enables it with a weight of
+`0.05`; older saved run configs leave it disabled unless overridden.
 
 ## 3. Does this validate S1 generation accuracy?
 

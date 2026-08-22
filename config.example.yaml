@@ -58,6 +58,9 @@ mol_fm:
   time_scaled_loss: false
   weight_ae: false
   target_blur: 0.0
+  # Differentiable penalty on expected bond-order valence overflow. This trains
+  # the model itself; it does not delete or rewrite bonds after generation.
+  valence_loss_weight: 0.05
   total_loss_weights:
     x: 3.0
     a: 0.4

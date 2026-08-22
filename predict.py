@@ -60,9 +60,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stochasticity", type=float, default=None)
     parser.add_argument("--hc-thresh", type=float, default=None)
     parser.add_argument("--guide-w-x", type=float, default=2.0)
-    parser.add_argument("--guide-w-a", type=float, default=2.0)
-    parser.add_argument("--guide-w-c", type=float, default=2.0)
-    parser.add_argument("--guide-w-e", type=float, default=2.0)
+    parser.add_argument("--guide-w-a", type=float, default=1.0)
+    parser.add_argument("--guide-w-c", type=float, default=1.0)
+    parser.add_argument("--guide-w-e", type=float, default=1.0)
     parser.add_argument(
         "--dfm-type",
         default="campbell",

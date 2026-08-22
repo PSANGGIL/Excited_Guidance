@@ -69,6 +69,17 @@ def resolve_atom_type_map(atom_map) -> list[str]:
     raise TypeError("atom_map must be a list, tuple, or dict")
 
 
+def resolve_property_names(property_names) -> list[str] | None:
+    """Normalize processed-data property metadata without splitting strings."""
+    if property_names is None:
+        return None
+    if isinstance(property_names, str):
+        return [property_names]
+    if isinstance(property_names, (list, tuple)):
+        return [str(name) for name in property_names]
+    raise TypeError("property_names must be a string, list, tuple, or None")
+
+
 def resolve_train_split(dataset_config: dict) -> str:
     if "train_split" in dataset_config:
         return str(dataset_config["train_split"])
@@ -176,8 +187,9 @@ def materialize_dataset_metadata(config: dict, split: str | None = None) -> dict
     for key in ("target_transform", "target_epsilon", "raw_property_column"):
         if data_dict.get(key) is not None:
             conditioning[key] = data_dict[key]
-    if data_dict.get("property_names") is not None:
-        conditioning["property_names"] = list(data_dict["property_names"])
+    property_names = resolve_property_names(data_dict.get("property_names"))
+    if property_names is not None:
+        conditioning["property_names"] = property_names
     return config
 
 
@@ -281,7 +293,7 @@ class MoleculeDataset(torch.utils.data.Dataset):
             raise ValueError(f"Properties not found in {self.data_file}")
         self.properties = data_dict["properties"]
         if self.properties.ndim > 1:
-            property_names = data_dict.get("property_names")
+            property_names = resolve_property_names(data_dict.get("property_names"))
             if (
                 isinstance(property_names, (list, tuple))
                 and self.target_property in property_names

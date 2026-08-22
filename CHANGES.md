@@ -20,3 +20,8 @@
   property, transform, charge classes, and bond classes.
 - Added preprocessing/normalization transform consistency checks.
 - Prediction defaults to the stable `best.ckpt` alias created after training.
+- Added an optional differentiable expected-valence loss so chemical consistency
+  is learned instead of imposed by post-generation bond editing.
+- Reduced default categorical CFG weights to 1.0 to avoid amplifying invalid
+  atom, charge, and bond decisions; coordinate guidance remains 2.0.
+- Fixed scalar `property_names` metadata being split into individual characters.

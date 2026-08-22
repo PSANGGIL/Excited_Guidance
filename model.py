@@ -3192,6 +3192,8 @@ class FlowMol(pl.LightningModule):
                  property_normalization_file: str | None = None,
                  validation_seed: int = 12345,
                  compare_shuffled_condition: bool = False,
+                 valence_loss_weight: float = 0.0,
+                 charge_offset: int = 2,
                  ):
         super().__init__()
 
@@ -3225,6 +3227,39 @@ class FlowMol(pl.LightningModule):
         self.property_normalization_file = property_normalization_file
         self.validation_seed = int(validation_seed)
         self.compare_shuffled_condition = bool(compare_shuffled_condition)
+        self.valence_loss_weight = float(valence_loss_weight)
+        self.charge_offset = int(charge_offset)
+        if self.valence_loss_weight < 0.0:
+            raise ValueError("valence_loss_weight must be non-negative")
+
+        valence_caps = []
+        for symbol in self.atom_type_map:
+            per_charge = []
+            for charge_index in range(self.n_atom_charges):
+                charge = charge_index - self.charge_offset
+                if symbol == 'H':
+                    cap = 1.0
+                elif symbol == 'B':
+                    cap = 4.0 if charge < 0 else 3.0
+                elif symbol == 'C':
+                    cap = 4.0
+                elif symbol == 'N':
+                    cap = 4.0 if charge > 0 else 3.0
+                elif symbol == 'O':
+                    cap = 3.0 if charge > 0 else 1.0 if charge < 0 else 2.0
+                elif symbol in {'F', 'Cl', 'Br'}:
+                    cap = 1.0
+                elif symbol == 'S':
+                    cap = 6.0
+                else:
+                    cap = 8.0
+                per_charge.append(cap)
+            valence_caps.append(per_charge)
+        self.register_buffer(
+            '_valence_caps',
+            torch.tensor(valence_caps, dtype=torch.float32),
+            persistent=False,
+        )
 
         # for conditional generation of molecules with a property
         self.property_embedder = nn.Sequential(
@@ -3422,7 +3457,47 @@ class FlowMol(pl.LightningModule):
         total = torch.zeros((), device=next(iter(losses.values())).device)
         for feat in self.canonical_feat_order:
             total = total + self.total_loss_weights[feat] * losses[feat]
+        if 'valence' in losses:
+            total = total + self.valence_loss_weight * losses['valence']
         return total
+
+    def _expected_valence_loss(
+        self,
+        g: dgl.DGLGraph,
+        edge_logits: torch.Tensor,
+        upper_edge_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Penalize expected endpoint valence above the true atom/charge cap.
+
+        This is differentiable with respect to bond logits and does not alter a
+        sampled molecule. Ground-truth atom and charge classes define the cap so
+        the model cannot reduce the penalty by predicting a more permissive atom.
+        """
+        if edge_logits.shape[-1] != 5:
+            raise ValueError(
+                "Valence loss expects bond classes "
+                "[none, single, double, triple, aromatic]"
+            )
+        bond_orders = edge_logits.new_tensor([0.0, 1.0, 2.0, 3.0, 1.5])
+        expected_orders = (torch.softmax(edge_logits, dim=-1) * bond_orders).sum(-1)
+        edge_src, edge_dst = g.edges()
+        edge_src = edge_src[upper_edge_mask]
+        edge_dst = edge_dst[upper_edge_mask]
+        expected_valence = edge_logits.new_zeros(g.num_nodes())
+        expected_valence.index_add_(0, edge_src, expected_orders)
+        expected_valence.index_add_(0, edge_dst, expected_orders)
+
+        atom_indices = g.ndata['a_1_true'].argmax(dim=-1)
+        if self.exclude_charges:
+            charge_indices = torch.full_like(atom_indices, self.charge_offset)
+        else:
+            charge_indices = g.ndata['c_1_true'].argmax(dim=-1)
+        caps = self._valence_caps[atom_indices, charge_indices].to(edge_logits.dtype)
+        overflow = torch.relu(expected_valence - caps)
+        # Complete graphs contain O(N^2) candidate edges, so raw squared overflow
+        # can dominate early training and bias the model toward predicting no bonds.
+        # log1p is quadratic near zero but limits that early large-error influence.
+        return torch.log1p(overflow.square()).mean()
 
     @staticmethod
     def _raise_on_non_finite(
@@ -4134,6 +4209,13 @@ class ClassifierFreeGuidance(FlowMol):
                     self.parameterization == 'ctmc'
                     and feat in ['a', 'c', 'e']
                 ),
+            )
+
+        if self.valence_loss_weight > 0.0:
+            losses['valence'] = self._expected_valence_loss(
+                g,
+                vf_output['e'],
+                upper_edge_mask,
             )
 
         return losses        
@@ -4849,6 +4931,7 @@ def model_from_config(config: dict, seed_ckpt: str | Path | None = None) -> Clas
         'compare_shuffled_condition': validation_cfg.get(
             'compare_shuffled_condition', False
         ),
+        'charge_offset': dataset.get('charge_offset', 2),
         'p_uncond': guidance.get('p_uncond', 0.2),
         **config.get('mol_fm', {}),
     }

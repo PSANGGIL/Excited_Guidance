@@ -154,7 +154,7 @@ intermediate structure `z_t` together with the property condition.
 With the default configuration, the total loss is:
 
 ```text
-L_total = 3.0 L_x + 0.4 L_a + 1.0 L_c + 2.0 L_e
+L_total = 3.0 L_x + 0.4 L_a + 1.0 L_c + 2.0 L_e + 0.05 L_valence
 ```
 
 where:
@@ -164,10 +164,28 @@ where:
 - `L_a`: atom-class cross entropy
 - `L_c`: charge-class cross entropy
 - `L_e`: bond-class cross entropy
+- `L_valence`: log-scaled squared overflow of expected bond-order valence above
+  the ground-truth atom/charge valence cap
+
+`L_valence` is computed from differentiable bond probabilities during training.
+It does not remove bonds or otherwise rewrite generated molecules. Prediction
+also defaults categorical CFG weights (`a`, `c`, and `e`) to `1.0`; stronger
+categorical guidance can be requested explicitly but may amplify invalid bonds.
 
 For CTMC categorical features, cross entropy is applied only to entries that
 are still masked at time `t`. Already-unmasked entries use target `-100` and are
 excluded by `CrossEntropyLoss(ignore_index=-100)`.
+
+The valence auxiliary term is evaluated on all endpoint bond probabilities,
+including entries already revealed on the sampled CTMC path. This avoids leaving
+some atoms without a chemical-consistency gradient in a batch.
+
+For an existing run whose saved config predates this option, enable it while
+resuming with:
+
+```bash
+python train.py --resume runs/<RUN_NAME> --set mol_fm.valence_loss_weight=0.05
+```
 
 ### Important: there is no direct S1 regression loss
 
