@@ -1,0 +1,401 @@
+run.sh 사용법
+
+run.sh는 MolGuidance의 학습(train) 과 생성(prediction) 을 하나의 실행 파일에서 처리합니다.
+
+run.sh
+├── train  → train.py 실행
+└── pred   → predict.py 실행
+
+기본 실행 방식은 nohup 백그라운드 실행이며, 로그와 PID 파일은 logs/ 디렉터리에 저장됩니다.
+
+1. 최초 설정
+
+실행 권한을 한 번만 추가합니다.
+
+chmod +x run.sh
+
+도움말 확인:
+
+./run.sh --help
+
+2. 학습 실행
+
+기본 학습
+
+./run.sh train
+
+기본적으로 다음 설정을 사용합니다.
+
+config : config.example.yaml
+seed   : 42
+mode   : nohup background
+
+실제로 실행되는 명령은 다음과 같습니다.
+
+nohup python -u train.py \
+  --config config.example.yaml \
+  --seed 42 \
+  > logs/train_<DATE>_<PID>.log 2>&1 &
+
+다른 config 사용
+
+./run.sh train --config config.s1.yaml
+
+또는 환경변수로 기본 config를 지정할 수 있습니다.
+
+TRAIN_CONFIG=config.s1.yaml ./run.sh train
+
+Seed 변경
+
+./run.sh train --seed 7
+
+또는:
+
+TRAIN_SEED=7 ./run.sh train
+
+명령행 옵션이 환경변수보다 우선합니다.
+
+Config 일부 값만 변경
+
+train.py가 --set 옵션을 지원하는 경우 다음처럼 사용할 수 있습니다.
+
+./run.sh train \
+  --set training.batch_size=128 \
+  --set training.trainer_args.devices=1
+
+여러 값을 동시에 전달할 수 있습니다.
+
+./run.sh train \
+  --set training.batch_size=64 \
+  --set training.learning_rate=1e-4 \
+  --set training.early_stopping.patience=30
+
+학습 재시작
+
+기존 run을 이어서 학습합니다.
+
+./run.sh train --resume runs/<RUN_NAME>
+
+예시:
+
+./run.sh train --resume runs/20260803_150000
+
+--resume을 사용하면 해당 run에 저장된 config를 재사용합니다. 별도의 --config를 함께 전달하지 않는 것이 권장됩니다.
+
+Foreground 실행
+
+기본 nohup 대신 현재 터미널에서 직접 실행하려면 --foreground를 사용합니다.
+
+./run.sh train --foreground
+
+추가 옵션과 함께 사용할 수도 있습니다.
+
+./run.sh train --foreground \
+  --config config.s1.yaml \
+  --seed 42
+
+Foreground 실행에서도 출력은 화면과 로그 파일에 동시에 기록됩니다.
+
+3. 분자 생성 실행
+
+기본 prediction
+
+./run.sh pred runs/<RUN_NAME>
+
+예시:
+
+./run.sh pred runs/20260803_150000
+
+기본값은 다음과 같습니다.
+
+target  : 3.0
+n_mols  : 100
+device  : cuda:0
+seed    : 42
+mode    : nohup background
+
+실제로 실행되는 명령은 다음과 같습니다.
+
+nohup python -u predict.py \
+  --run runs/<RUN_NAME> \
+  --target 3.0 \
+  --n-mols 100 \
+  --device cuda:0 \
+  --seed 42 \
+  > logs/pred_<RUN_NAME>_<DATE>_<PID>.log 2>&1 &
+
+predict.py는 run 디렉터리 내부의 config와 checkpoint를 자동으로 사용합니다.
+
+runs/<RUN_NAME>/config.yaml
+runs/<RUN_NAME>/checkpoints/best.ckpt
+
+best.ckpt가 없으면 last.ckpt를 사용합니다.
+
+S1 target 변경
+
+./run.sh pred runs/<RUN_NAME> --target 5.0
+
+예시:
+
+./run.sh pred runs/20260803_150000 \
+  --target 5.0 \
+  --n-mols 500
+
+생성 개수 변경
+
+./run.sh pred runs/<RUN_NAME> --n-mols 1000
+
+GPU 변경
+
+두 번째 GPU를 사용하려면:
+
+./run.sh pred runs/<RUN_NAME> --device cuda:1
+
+CPU 실행:
+
+./run.sh pred runs/<RUN_NAME> --device cpu
+
+Prediction seed 변경
+
+./run.sh pred runs/<RUN_NAME> --seed 7
+
+여러 target 값 사용
+
+Target 값이 저장된 NumPy 파일을 사용하는 경우:
+
+./run.sh pred runs/<RUN_NAME> \
+  --property-values-file target_values.npy \
+  --n-mols 500
+
+--property-values-file을 지정하면 기본 --target 3.0은 자동으로 추가되지 않습니다.
+
+Prediction foreground 실행
+
+./run.sh pred --foreground runs/<RUN_NAME>
+
+예시:
+
+./run.sh pred --foreground runs/20260803_150000 \
+  --target 4.0 \
+  --n-mols 100 \
+  --device cuda:0
+
+4. 환경변수로 기본값 설정
+
+학습 환경변수
+
+환경변수
+
+기본값
+
+설명
+
+TRAIN_CONFIG
+
+config.example.yaml
+
+기본 학습 config
+
+TRAIN_SEED
+
+42
+
+기본 학습 seed
+
+예시:
+
+TRAIN_CONFIG=config.s1.yaml \
+TRAIN_SEED=7 \
+./run.sh train
+
+Prediction 환경변수
+
+환경변수
+
+기본값
+
+설명
+
+PRED_RUN_DIR
+
+없음
+
+기본 run 디렉터리 또는 checkpoint
+
+PRED_TARGET
+
+3.0
+
+기본 target 값
+
+PRED_N_MOLS
+
+100
+
+기본 생성 개수
+
+PRED_DEVICE
+
+cuda:0
+
+기본 실행 장치
+
+PRED_SEED
+
+42
+
+기본 prediction seed
+
+예시:
+
+PRED_TARGET=5.0 \
+PRED_N_MOLS=500 \
+PRED_DEVICE=cuda:1 \
+./run.sh pred runs/20260803_150000
+
+PRED_RUN_DIR까지 지정하면 run 경로를 명령행에서 생략할 수 있습니다.
+
+PRED_RUN_DIR=runs/20260803_150000 \
+PRED_TARGET=4.0 \
+./run.sh pred
+
+공통 환경변수
+
+환경변수
+
+기본값
+
+설명
+
+MOLGUIDANCE_PYTHON
+
+python
+
+사용할 Python 실행 파일
+
+MOLGUIDANCE_LOG_DIR
+
+logs
+
+로그와 PID 저장 디렉터리
+
+Conda 환경의 Python을 명시하는 예시:
+
+MOLGUIDANCE_PYTHON=/home/user/miniconda3/envs/mol/bin/python \
+./run.sh train
+
+로그 디렉터리 변경:
+
+MOLGUIDANCE_LOG_DIR=/data/molguidance_logs \
+./run.sh train
+
+5. 로그 확인
+
+최근 학습 로그 목록:
+
+ls -lt logs/train_*.log
+
+최근 prediction 로그 목록:
+
+ls -lt logs/pred_*.log
+
+가장 최근 학습 로그 실시간 확인:
+
+tail -f "$(ls -t logs/train_*.log | head -n 1)"
+
+가장 최근 prediction 로그 실시간 확인:
+
+tail -f "$(ls -t logs/pred_*.log | head -n 1)"
+
+특정 로그 확인:
+
+tail -f logs/train_20260803_150000_12345.log
+
+6. 실행 상태 확인
+
+PID 파일 확인:
+
+cat logs/train_<DATE>_<PID>.pid
+
+해당 프로세스가 실행 중인지 확인:
+
+ps -fp "$(cat logs/train_<DATE>_<PID>.pid)"
+
+최근 학습 PID 확인:
+
+TRAIN_PID_FILE="$(ls -t logs/train_*.pid | head -n 1)"
+cat "$TRAIN_PID_FILE"
+ps -fp "$(cat "$TRAIN_PID_FILE")"
+
+GPU 사용 상태 확인:
+
+nvidia-smi
+
+7. 실행 중단
+
+특정 PID 파일을 이용해 정상 종료 신호를 보냅니다.
+
+kill "$(cat logs/train_<DATE>_<PID>.pid)"
+
+최근 학습 중단:
+
+TRAIN_PID_FILE="$(ls -t logs/train_*.pid | head -n 1)"
+kill "$(cat "$TRAIN_PID_FILE")"
+
+최근 prediction 중단:
+
+PRED_PID_FILE="$(ls -t logs/pred_*.pid | head -n 1)"
+kill "$(cat "$PRED_PID_FILE")"
+
+정상 종료되지 않을 때만 강제 종료합니다.
+
+kill -9 "$(cat <PID_FILE>)"
+
+kill -9는 checkpoint 저장이나 cleanup을 수행할 기회를 주지 않으므로 마지막 수단으로만 사용합니다.
+
+8. 자주 사용하는 명령
+
+기본 학습
+
+./run.sh train
+
+Batch size를 변경한 학습
+
+./run.sh train --set training.batch_size=128
+
+기존 run 이어서 학습
+
+./run.sh train --resume runs/20260803_150000
+
+Target 3.0에서 100개 생성
+
+./run.sh pred runs/20260803_150000
+
+Target 5.0에서 500개 생성
+
+./run.sh pred runs/20260803_150000 \
+  --target 5.0 \
+  --n-mols 500
+
+두 번째 GPU에서 생성
+
+./run.sh pred runs/20260803_150000 \
+  --device cuda:1
+
+터미널에서 직접 오류 확인
+
+./run.sh train --foreground
+
+또는:
+
+./run.sh pred --foreground runs/20260803_150000
+
+9. 기본 명령 형식 요약
+
+./run.sh train [--foreground] [train.py options]
+
+./run.sh pred [--foreground] RUN_DIR_OR_CHECKPOINT [predict.py options]
+
+도움말:
+
+./run.sh help

@@ -1,0 +1,9 @@
+# CUDA binary packages (torch, torchvision, dgl, torch-scatter) must be installed
+# separately with builds matching the server's PyTorch/CUDA ABI.
+numpy==2.2.6
+PyYAML
+scipy
+pandas
+pytorch-lightning==2.5.2
+einops
+rdkit

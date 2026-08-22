@@ -1,0 +1,174 @@
+atom_type_map:
+- H
+- B
+- C
+- N
+- O
+- F
+- S
+- Cl
+- Br
+batch_size: 128
+compare_shuffled_condition: true
+conditional_generation: true
+conditioning_property: f_osc
+dataset_config:
+  atom_map:
+  - H
+  - B
+  - C
+  - N
+  - O
+  - F
+  - S
+  - Cl
+  - Br
+  charge_offset: 2
+  conditioning:
+    enabled: true
+    normalize: true
+    property: f_osc
+    property_names:
+    - s
+    - '1'
+    - _
+    - l
+    - o
+    - g
+    - _
+    - o
+    - s
+    raw_property_column: f_osc
+    target_epsilon: 1.0e-06
+    target_transform: log10
+  dataset_name: csvmol
+  metadata_source: /home/jovyan/cpu-only-1-datavol-1/psg/generation/STGG-AL/data/data_/train_data_processed.pt
+  n_atom_charges: 6
+  n_bond_types: 5
+  processed_data_dir: /home/jovyan/cpu-only-1-datavol-1/psg/generation/STGG-AL/data/data_
+  train_split: train
+  validate_processed_data: true
+dataset_name: csvmol
+default_n_timesteps: 250
+distributed: false
+dm_prior_config:
+  a:
+    align: false
+    kwargs: {}
+    type: ctmc
+  c:
+    align: false
+    kwargs: {}
+    type: ctmc
+  e:
+    align: false
+    kwargs: {}
+    type: ctmc
+  x:
+    align: true
+    kwargs:
+      std: 1.0
+    type: centered-normal
+exclude_charges: false
+gaussian_expansion: false
+gaussian_start: null
+gaussian_stop: null
+interpolant_scheduler_config:
+  cosine_params:
+    a: 2.0
+    c: 2.0
+    e: 1.5
+    x: 1.0
+  schedule_type:
+    a: linear
+    c: linear
+    e: linear
+    x: linear
+lr_scheduler_config:
+  base_lr: 0.00025
+  restart_interval: 0
+  restart_type: linear
+  warmup_length: 0.0
+  weight_decay: 1.0e-12
+marginal_dists_file: !!python/object/apply:pathlib.PosixPath
+- /
+- home
+- jovyan
+- cpu-only-1-datavol-1
+- psg
+- generation
+- STGG-AL
+- data
+- data_
+- train_data_marginal_dists.pt
+max_num_edges: 400000
+max_num_edges_eval: 400000
+n_atom_charges: 6
+n_atoms_hist_file: !!python/object/apply:pathlib.PosixPath
+- /
+- home
+- jovyan
+- cpu-only-1-datavol-1
+- psg
+- generation
+- STGG-AL
+- data
+- data_
+- train_data_n_atoms_histogram.pt
+n_bond_types: 5
+n_gaussians: 5
+n_mols_to_sample: 64
+num_workers: 4
+p_uncond: 0.1
+parameterization: ctmc
+prior_config:
+  a:
+    align: false
+    kwargs: {}
+    type: ctmc
+  c:
+    align: false
+    kwargs: {}
+    type: ctmc
+  e:
+    align: false
+    kwargs: {}
+    type: ctmc
+  x:
+    align: true
+    kwargs:
+      std: 1.0
+    type: centered-normal
+properties_handle_method: concatenate_sum
+property_embedding_dim: 256
+property_epsilon: 1.0e-06
+property_normalization_file: /home/jovyan/cpu-only-1-datavol-1/psg/generation/STGG-AL/data/data_/train_data_property_normalization.pt
+property_transform: log10
+sample_interval: 1.0
+seed: 42
+target_blur: 0.0
+time_scaled_loss: false
+total_loss_weights:
+  a: 0.4
+  c: 1.0
+  e: 2.0
+  x: 3.0
+validation_seed: 12345
+vector_field_config:
+  convs_per_update: 1
+  high_confidence_threshold: 0.0
+  message_norm: 100
+  n_cp_feats: 4
+  n_hidden_edge_feats: 128
+  n_hidden_scalars: 256
+  n_message_gvps: 3
+  n_molecule_updates: 8
+  n_recycles: 1
+  n_update_gvps: 3
+  n_vec_channels: 16
+  rbf_dim: 32
+  rbf_dmax: 14
+  separate_mol_updaters: true
+  stochasticity: 10.0
+  update_edge_w_distance: true
+weight_ae: false
