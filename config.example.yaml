@@ -102,6 +102,9 @@ training:
   validation:
     seed: 12345
     compare_shuffled_condition: true
+    # Log RMSE, masked accuracy/perplexity, loss contribution, and valence pass
+    # metrics from the existing validation forward pass (no molecule sampling).
+    log_intuitive_metrics: true
 
   early_stopping:
     enabled: true

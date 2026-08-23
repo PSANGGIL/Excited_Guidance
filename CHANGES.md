@@ -25,3 +25,6 @@
 - Reduced default categorical CFG weights to 1.0 to avoid amplifying invalid
   atom, charge, and bond decisions; coordinate guidance remains 2.0.
 - Fixed scalar `property_names` metadata being split into individual characters.
+- Added intuitive validation diagnostics for coordinate displacement, masked
+  categorical accuracy/perplexity, loss contribution, valence violations, and
+  relative condition gain without running the sampling loop.

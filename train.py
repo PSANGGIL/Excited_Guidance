@@ -272,6 +272,11 @@ def main():
             f"{model.total_loss_weights[feat]}*L_{feat}"
             for feat in model.canonical_feat_order
         )
+        + (
+            f" + {model.valence_loss_weight}*L_valence"
+            if model.valence_loss_weight > 0.0
+            else ""
+        )
     )
     print("Early stopping monitor: val_cond_total_loss")
 

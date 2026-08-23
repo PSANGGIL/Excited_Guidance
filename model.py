@@ -3194,6 +3194,7 @@ class FlowMol(pl.LightningModule):
                  compare_shuffled_condition: bool = False,
                  valence_loss_weight: float = 0.0,
                  charge_offset: int = 2,
+                 log_intuitive_metrics: bool = True,
                  ):
         super().__init__()
 
@@ -3229,6 +3230,7 @@ class FlowMol(pl.LightningModule):
         self.compare_shuffled_condition = bool(compare_shuffled_condition)
         self.valence_loss_weight = float(valence_loss_weight)
         self.charge_offset = int(charge_offset)
+        self.log_intuitive_metrics = bool(log_intuitive_metrics)
         if self.valence_loss_weight < 0.0:
             raise ValueError("valence_loss_weight must be non-negative")
 
@@ -3473,19 +3475,37 @@ class FlowMol(pl.LightningModule):
         sampled molecule. Ground-truth atom and charge classes define the cap so
         the model cannot reduce the penalty by predicting a more permissive atom.
         """
+        state = self._valence_diagnostic_state(g, edge_logits, upper_edge_mask)
+        overflow = state['expected_overflow']
+        # Complete graphs contain O(N^2) candidate edges, so raw squared overflow
+        # can dominate early training and bias the model toward predicting no bonds.
+        # log1p is quadratic near zero but limits that early large-error influence.
+        return torch.log1p(overflow.square()).mean()
+
+    def _valence_diagnostic_state(
+        self,
+        g: dgl.DGLGraph,
+        edge_logits: torch.Tensor,
+        upper_edge_mask: torch.Tensor,
+    ) -> Dict[str, torch.Tensor]:
         if edge_logits.shape[-1] != 5:
             raise ValueError(
                 "Valence loss expects bond classes "
                 "[none, single, double, triple, aromatic]"
             )
         bond_orders = edge_logits.new_tensor([0.0, 1.0, 2.0, 3.0, 1.5])
-        expected_orders = (torch.softmax(edge_logits, dim=-1) * bond_orders).sum(-1)
+        probabilities = torch.softmax(edge_logits, dim=-1)
+        expected_orders = (probabilities * bond_orders).sum(-1)
+        selected_orders = bond_orders[probabilities.argmax(dim=-1)]
         edge_src, edge_dst = g.edges()
         edge_src = edge_src[upper_edge_mask]
         edge_dst = edge_dst[upper_edge_mask]
         expected_valence = edge_logits.new_zeros(g.num_nodes())
         expected_valence.index_add_(0, edge_src, expected_orders)
         expected_valence.index_add_(0, edge_dst, expected_orders)
+        selected_valence = edge_logits.new_zeros(g.num_nodes())
+        selected_valence.index_add_(0, edge_src, selected_orders)
+        selected_valence.index_add_(0, edge_dst, selected_orders)
 
         atom_indices = g.ndata['a_1_true'].argmax(dim=-1)
         if self.exclude_charges:
@@ -3493,11 +3513,88 @@ class FlowMol(pl.LightningModule):
         else:
             charge_indices = g.ndata['c_1_true'].argmax(dim=-1)
         caps = self._valence_caps[atom_indices, charge_indices].to(edge_logits.dtype)
-        overflow = torch.relu(expected_valence - caps)
-        # Complete graphs contain O(N^2) candidate edges, so raw squared overflow
-        # can dominate early training and bias the model toward predicting no bonds.
-        # log1p is quadratic near zero but limits that early large-error influence.
-        return torch.log1p(overflow.square()).mean()
+        return {
+            'expected_overflow': torch.relu(expected_valence - caps),
+            'selected_overflow': torch.relu(selected_valence - caps),
+        }
+
+    @torch.no_grad()
+    def _build_intuitive_validation_metrics(
+        self,
+        g: dgl.DGLGraph,
+        predictions: Dict[str, torch.Tensor],
+        targets: Dict[str, torch.Tensor],
+        upper_edge_mask: torch.Tensor,
+    ) -> Dict[str, torch.Tensor]:
+        """Translate denoising losses into human-readable validation metrics."""
+        metrics: Dict[str, torch.Tensor] = {}
+        coordinate_error = predictions['x'] - g.ndata['x_1_true']
+        metrics['val_x_axis_rmse'] = coordinate_error.square().mean().sqrt()
+        metrics['val_x_atom_rms_displacement'] = (
+            coordinate_error.square().sum(dim=-1).mean().sqrt()
+        )
+        edge_src, edge_dst = g.edges()
+        edge_src = edge_src[upper_edge_mask]
+        edge_dst = edge_dst[upper_edge_mask]
+        true_bond_mask = g.edata['e_1_true'][upper_edge_mask].argmax(dim=-1) != 0
+        if bool(true_bond_mask.any()):
+            bonded_src = edge_src[true_bond_mask]
+            bonded_dst = edge_dst[true_bond_mask]
+            predicted_lengths = torch.linalg.vector_norm(
+                predictions['x'][bonded_src] - predictions['x'][bonded_dst],
+                dim=-1,
+            )
+            true_lengths = torch.linalg.vector_norm(
+                g.ndata['x_1_true'][bonded_src] - g.ndata['x_1_true'][bonded_dst],
+                dim=-1,
+            )
+            metrics['val_x_true_bond_length_mae'] = (
+                predicted_lengths - true_lengths
+            ).abs().mean()
+
+        for feat in ('a', 'c', 'e'):
+            if feat not in predictions or feat not in targets:
+                continue
+            target = targets[feat]
+            mask = target != -100
+            if not bool(mask.any()):
+                continue
+            logits = predictions[feat][mask]
+            labels = target[mask]
+            nll = F.cross_entropy(logits, labels, reduction='mean')
+            metrics[f'val_{feat}_masked_accuracy'] = (
+                logits.argmax(dim=-1) == labels
+            ).float().mean()
+            metrics[f'val_{feat}_masked_perplexity'] = nll.exp()
+            metrics[f'val_{feat}_masked_true_probability'] = (-nll).exp()
+
+        valence = self._valence_diagnostic_state(
+            g,
+            predictions['e'],
+            upper_edge_mask,
+        )
+        node_batch_idx = get_node_batch_idxs(g)
+        for mode in ('expected', 'selected'):
+            overflow = valence[f'{mode}_overflow']
+            violating = overflow > 1.0e-6
+            violating_per_molecule = overflow.new_zeros(g.batch_size)
+            violating_per_molecule.index_add_(
+                0,
+                node_batch_idx,
+                violating.to(overflow.dtype),
+            )
+            metrics[f'val_{mode}_valence_overflow_mean'] = overflow.mean()
+            metrics[f'val_{mode}_valence_overflow_p95'] = torch.quantile(
+                overflow,
+                0.95,
+            )
+            metrics[f'val_{mode}_atom_valence_violation_rate'] = (
+                violating.float().mean()
+            )
+            metrics[f'val_{mode}_molecule_valence_pass_rate'] = (
+                violating_per_molecule == 0
+            ).float().mean()
+        return metrics
 
     @staticmethod
     def _raise_on_non_finite(
@@ -3589,6 +3686,19 @@ class FlowMol(pl.LightningModule):
             for feat, value in losses.items()
         }
         val_logs['val_cond_total_loss'] = total_loss
+        if self.log_intuitive_metrics:
+            val_logs.update(getattr(self, '_last_intuitive_validation_metrics', {}))
+            safe_total = total_loss.detach().abs().clamp_min(1.0e-12)
+            for feat in self.canonical_feat_order:
+                contribution = self.total_loss_weights[feat] * losses[feat].detach()
+                val_logs[f'val_{feat}_loss_contribution_percent'] = (
+                    100.0 * contribution / safe_total
+                )
+            if 'valence' in losses:
+                contribution = self.valence_loss_weight * losses['valence'].detach()
+                val_logs['val_valence_loss_contribution_percent'] = (
+                    100.0 * contribution / safe_total
+                )
         self.log_dict(
             val_logs,
             prog_bar=False,
@@ -3606,6 +3716,27 @@ class FlowMol(pl.LightningModule):
             batch_size=g.batch_size,
             sync_dist=True,
         )
+        if self.log_intuitive_metrics:
+            intuitive = getattr(self, '_last_intuitive_validation_metrics', {})
+            progress_metrics = {
+                'val_atom_rms_bar': intuitive.get('val_x_atom_rms_displacement'),
+                'val_bond_acc_bar': intuitive.get('val_e_masked_accuracy'),
+                'val_valence_pass_bar': intuitive.get(
+                    'val_selected_molecule_valence_pass_rate'
+                ),
+            }
+            self.log_dict(
+                {
+                    name: value
+                    for name, value in progress_metrics.items()
+                    if value is not None
+                },
+                prog_bar=True,
+                on_step=False,
+                on_epoch=True,
+                batch_size=g.batch_size,
+                sync_dist=True,
+            )
 
         if self.compare_shuffled_condition and g.batch_size > 1:
             rng_context, seed = self._validation_rng(g, batch_idx)
@@ -3632,6 +3763,16 @@ class FlowMol(pl.LightningModule):
                 self.log(
                     'val_condition_gain',
                     shuffled_total - total_loss,
+                    on_step=False,
+                    on_epoch=True,
+                    batch_size=g.batch_size,
+                    sync_dist=True,
+                )
+                self.log(
+                    'val_condition_gain_percent',
+                    100.0
+                    * (shuffled_total - total_loss)
+                    / shuffled_total.detach().abs().clamp_min(1.0e-12),
                     on_step=False,
                     on_epoch=True,
                     batch_size=g.batch_size,
@@ -4075,7 +4216,11 @@ class ClassifierFreeGuidance(FlowMol):
         # Training uses classifier-free dropout. Validation is always fully
         # conditional so val_cond_total_loss measures the target-conditioned model.
         mode = 'mixed' if stage == 'train' else 'conditional'
-        return self(g, condition_mode=mode)
+        return self(
+            g,
+            condition_mode=mode,
+            collect_intuitive_metrics=(stage == 'val' and self.log_intuitive_metrics),
+        )
 
     def compute_shuffled_condition_losses(
         self,
@@ -4085,9 +4230,18 @@ class ClassifierFreeGuidance(FlowMol):
             return None
         shuffled = g.local_var()
         shuffled.prop = torch.roll(g.prop, shifts=1, dims=0).clone()
-        return self(shuffled, condition_mode='conditional')
+        return self(
+            shuffled,
+            condition_mode='conditional',
+            collect_intuitive_metrics=False,
+        )
 
-    def forward(self, g: dgl.DGLGraph, condition_mode: str = 'mixed'):
+    def forward(
+        self,
+        g: dgl.DGLGraph,
+        condition_mode: str = 'mixed',
+        collect_intuitive_metrics: bool = False,
+    ):
         """Compute CTMC denoising losses under a selected conditioning policy.
 
         ``mixed`` applies classifier-free property dropout and is used only for
@@ -4216,6 +4370,16 @@ class ClassifierFreeGuidance(FlowMol):
                 g,
                 vf_output['e'],
                 upper_edge_mask,
+            )
+
+        if collect_intuitive_metrics:
+            self._last_intuitive_validation_metrics = (
+                self._build_intuitive_validation_metrics(
+                    g,
+                    vf_output,
+                    targets,
+                    upper_edge_mask,
+                )
             )
 
         return losses        
@@ -4932,6 +5096,7 @@ def model_from_config(config: dict, seed_ckpt: str | Path | None = None) -> Clas
             'compare_shuffled_condition', False
         ),
         'charge_offset': dataset.get('charge_offset', 2),
+        'log_intuitive_metrics': validation_cfg.get('log_intuitive_metrics', True),
         'p_uncond': guidance.get('p_uncond', 0.2),
         **config.get('mol_fm', {}),
     }

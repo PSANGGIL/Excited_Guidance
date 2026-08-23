@@ -247,6 +247,36 @@ A positive value means the correct S1 condition helps reconstruction compared
 with a wrong S1 condition. This is an internal condition-use diagnostic, not an
 external S1 accuracy measurement.
 
+### Intuitive validation metrics
+
+With `training.validation.log_intuitive_metrics: true` (the default), the same
+validation forward pass also reports human-readable diagnostics without sampling
+new molecules:
+
+```text
+val_x_axis_rmse
+val_x_atom_rms_displacement
+val_x_true_bond_length_mae
+val_{a,c,e}_masked_accuracy
+val_{a,c,e}_masked_perplexity
+val_{a,c,e}_masked_true_probability
+val_{x,a,c,e,valence}_loss_contribution_percent
+val_{expected,selected}_valence_overflow_mean
+val_{expected,selected}_valence_overflow_p95
+val_{expected,selected}_atom_valence_violation_rate
+val_{expected,selected}_molecule_valence_pass_rate
+val_condition_gain_percent
+```
+
+`expected` uses soft endpoint bond probabilities and is useful for monitoring
+training. `selected` uses argmax bond classes and is closer to the categorical
+graph that sampling will produce. Coordinate metrics use the processed data's
+coordinate unit (normally Angstrom). These diagnostics do not replace raw
+generation validity or independent S1 evaluation.
+
+The progress bar shows compact aliases for the three most useful diagnostics:
+`val_atom_rms_bar`, `val_bond_acc_bar`, and `val_valence_pass_bar`.
+
 ## Early stopping
 
 Early stopping is enabled by default:
