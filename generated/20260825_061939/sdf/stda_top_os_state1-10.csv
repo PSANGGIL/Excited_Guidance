@@ -1,0 +1,6 @@
+﻿molecule_file,log_file,state,energy_eV,wavelength_nm,oscillator_strength,status
+00019.sdf,00019/00019_stda.log,2,2.377,521.7,0.575,ok
+00030.sdf,00030/00030_stda.log,9,3.681,336.8,0.7181,ok
+00041.sdf,00041/00041_stda.log,4,3.18,389.8,2.6603,ok
+00086.sdf,00086/00086_stda.log,5,2.228,556.5,0.4042,ok
+00097.sdf,00097/00097_stda.log,7,4.338,285.8,0.2308,ok

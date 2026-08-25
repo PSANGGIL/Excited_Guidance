@@ -2849,7 +2849,21 @@ class CTMCVectorField(EndpointVectorField):
                       mask_index:int,
                       last_step: bool, 
                       batch_idx: torch.Tensor,
-):
+    ):
+        if not bool(torch.isfinite(p_1_given_t).all()):
+            bad_rows = ~torch.isfinite(p_1_given_t).all(dim=-1)
+            raise FloatingPointError(
+                "Non-finite endpoint probabilities passed to campbell_step: "
+                f"{int(bad_rows.sum())}/{p_1_given_t.shape[0]} invalid rows"
+            )
+        row_sums = p_1_given_t.sum(dim=-1, keepdim=True)
+        if bool((row_sums <= 0).any()):
+            raise FloatingPointError(
+                "Zero-sum endpoint probabilities passed to campbell_step"
+            )
+        # Categorical validates the simplex quite strictly. Renormalize after
+        # temperature scaling to remove harmless floating-point sum drift.
+        p_1_given_t = p_1_given_t.clamp_min(0.0) / row_sums
         x1 = Categorical(p_1_given_t).sample() # has shape (num_nodes,)
 
         unmask_prob = dt*( alpha_t_prime + stochasticity*alpha_t  ) / (1 - alpha_t)
@@ -4782,17 +4796,19 @@ class CFGVectorField(CTMCVectorField):
             temperature = cat_temp_func(t_i)
 
             if dfm_type == 'campbell':
-                # Get log probabilities
-                uncond_val = F.softmax(uncond_pred[feat], dim=-1)
-                cond_val = F.softmax(cond_pred[feat], dim=-1)
-                log_p_uncond = torch.log(uncond_val)
-                log_p_cond = torch.log(cond_val)
-                # Compute probabilities with guidance
-                p_s_1 = torch.exp(log_p_uncond + guide_weight * (log_p_cond - log_p_uncond))
-
-                # Normalize to ensure valid probabilities
-                p_s_1 = p_s_1 / p_s_1.sum(dim=-1, keepdim=True)
-                p_s_1 = F.softmax(torch.log(p_s_1)/temperature, dim=-1)
+                # Apply CFG directly in logit space. This is equivalent to
+                # log-probability CFG after normalization, but avoids softmax
+                # underflow followed by ``-inf - (-inf)`` at low temperatures.
+                guided_logits = (
+                    uncond_pred[feat]
+                    + guide_weight * (cond_pred[feat] - uncond_pred[feat])
+                )
+                temperature = torch.as_tensor(
+                    temperature,
+                    dtype=guided_logits.dtype,
+                    device=guided_logits.device,
+                ).clamp_min(torch.finfo(guided_logits.dtype).eps)
+                p_s_1 = F.softmax(guided_logits / temperature, dim=-1)
 
                 xt, x_1_sampled = self.campbell_step(
                     p_1_given_t=p_s_1,

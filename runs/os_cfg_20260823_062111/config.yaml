@@ -1,17 +1,12 @@
 checkpointing:
-  # These options SAVE checkpoints during training. They do not load a checkpoint
-  # for a fresh run. A checkpoint is loaded only with --resume or --seed-model.
   every_n_epochs: 1
   monitor: val_cond_total_loss
   mode: min
   save_last: true
   save_top_k: 3
-
-
 dataset:
   processed_data_dir: /home/jovyan/cpu-only-1-datavol-1/psg/generation/STGG-AL/data/data_
   dataset_name: csvmol
-
   n_atom_charges: 6
   charge_offset: 2
   n_bond_types: 5
@@ -20,13 +15,27 @@ dataset:
   conditioning:
     enabled: true
     normalize: true
-    property: f_osc 
-
+    property: f_osc
+    target_transform: log10
+    target_epsilon: 1.0e-06
+    raw_property_column: f_osc
+    property_names:
+    - s1_log_os
+  atom_map:
+  - H
+  - B
+  - C
+  - N
+  - O
+  - F
+  - S
+  - Cl
+  - Br
+  metadata_source: /home/jovyan/cpu-only-1-datavol-1/psg/generation/STGG-AL/data/data_/train_data_processed.pt
 guidance:
   enabled: true
   guidance_type: classifier_free_guidance
   p_uncond: 0.1
-
 interpolant_scheduler:
   schedule_type:
     x: linear
@@ -38,28 +47,23 @@ interpolant_scheduler:
     a: 2.0
     c: 2.0
     e: 1.5
-
 lr_scheduler:
   base_lr: 0.00025
   weight_decay: 1.0e-12
   warmup_length: 0.0
   restart_interval: 0
   restart_type: linear
-
 model_setting:
   property_embedding_dim: 256
   properties_handle_method: concatenate_sum
   gaussian_expansion:
     enabled: false
     n_gaussians: 5
-
 mol_fm:
   parameterization: ctmc
   time_scaled_loss: false
   weight_ae: false
   target_blur: 0.0
-  # Differentiable penalty on expected bond-order valence overflow. This trains
-  # the model itself; it does not delete or rewrite bonds after generation.
   valence_loss_weight: 0.05
   total_loss_weights:
     x: 3.0
@@ -84,11 +88,9 @@ mol_fm:
       type: ctmc
       align: false
       kwargs: {}
-
 training:
   batch_size: 128
   num_workers: 4
-  # Directed complete-graph edge limit. Actual batch size is reduced automatically.
   max_num_edges: 400000
   max_num_edges_eval: 400000
   output_dir: ./runs
@@ -96,23 +98,16 @@ training:
     mols_to_sample: 64
     sample_interval: 1.0
     val_loss_interval: 1.0
-
-  # Validation is always fully conditional. The random CFG dropout used in
-  # training is disabled, and the same corruption seed is reused each epoch.
   validation:
     seed: 12345
     compare_shuffled_condition: true
-    # Log RMSE, masked accuracy/perplexity, loss contribution, and valence pass
-    # metrics from the existing validation forward pass (no molecule sampling).
     log_intuitive_metrics: true
-
   early_stopping:
     enabled: true
     monitor: val_cond_total_loss
     mode: min
     patience: 50
     min_delta: 0.0
-
   trainer_args:
     accelerator: gpu
     devices: 1
@@ -122,7 +117,6 @@ training:
     gradient_clip_algorithm: value
     gradient_clip_val: 1.0
     limit_val_batches: 1.0
-
 vector_field:
   n_vec_channels: 16
   n_hidden_scalars: 256
@@ -140,7 +134,6 @@ vector_field:
   n_cp_feats: 4
   stochasticity: 10.0
   high_confidence_threshold: 0.0
-
 wandb:
   mode: disabled
   project: mol-fm

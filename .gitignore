@@ -1,0 +1,2 @@
+# Training checkpoints are large runtime artifacts and remain local.
+runs/**/checkpoints/*.ckpt
