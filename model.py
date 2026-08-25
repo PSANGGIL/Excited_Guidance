@@ -1757,6 +1757,25 @@ class EndpointVectorField(nn.Module):
         else:
             raise ValueError(f'Invalid continuous_inv_temp_schedule: {schedule}')
         return inv_temp_func
+
+    def molecule_updater_index(self, conv_idx: int) -> int | None:
+        """Return the updater used after a convolution, or None.
+
+        Molecular state is updated after every convs_per_update convolutions.
+        Subtracting one converts the completed group count to a zero-based
+        updater index, including the convs_per_update == 1 case.
+        """
+        if (conv_idx + 1) % self.convs_per_update != 0:
+            return None
+        if not self.separate_mol_updaters:
+            return 0
+        updater_idx = (conv_idx + 1) // self.convs_per_update - 1
+        if updater_idx >= len(self.node_position_updaters):
+            raise IndexError(
+                f"Updater index {updater_idx} exceeds "
+                f"{len(self.node_position_updaters)} configured updaters"
+            )
+        return updater_idx
         
 
     def forward(self, g: dgl.DGLGraph, t: torch.Tensor, 
@@ -1806,12 +1825,8 @@ class EndpointVectorField(nn.Module):
                     )
 
                     # every convs_per_update convolutions, update the node positions and edge features
-                    if conv_idx != 0 and (conv_idx + 1) % self.convs_per_update == 0:
-
-                        if self.separate_mol_updaters:
-                            updater_idx = conv_idx // self.convs_per_update
-                        else:
-                            updater_idx = 0
+                    updater_idx = self.molecule_updater_index(conv_idx)
+                    if updater_idx is not None:
 
                         node_positions = self.node_position_updaters[updater_idx](node_scalar_features, node_positions, node_vec_features)
 
@@ -3113,12 +3128,8 @@ class CTMCVectorField(EndpointVectorField):
                     )
 
                     # every convs_per_update convolutions, update the node positions and edge features
-                    if conv_idx != 0 and (conv_idx + 1) % self.convs_per_update == 0:
-
-                        if self.separate_mol_updaters:
-                            updater_idx = conv_idx // self.convs_per_update
-                        else:
-                            updater_idx = 0
+                    updater_idx = self.molecule_updater_index(conv_idx)
+                    if updater_idx is not None:
 
                         node_positions = self.node_position_updaters[updater_idx](node_scalar_features, node_positions, node_vec_features)
 
@@ -3581,6 +3592,8 @@ class FlowMol(pl.LightningModule):
             ).float().mean()
             metrics[f'val_{feat}_masked_perplexity'] = nll.exp()
             metrics[f'val_{feat}_masked_true_probability'] = (-nll).exp()
+            if feat == 'e':
+                metrics.update(self._bond_classification_metrics(logits, labels))
 
         valence = self._valence_diagnostic_state(
             g,
@@ -3608,6 +3621,58 @@ class FlowMol(pl.LightningModule):
             metrics[f'val_{mode}_molecule_valence_pass_rate'] = (
                 violating_per_molecule == 0
             ).float().mean()
+        return metrics
+
+    def _bond_classification_metrics(
+        self,
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+    ) -> Dict[str, torch.Tensor]:
+        """Return bonded-edge and per-class diagnostics for masked edges."""
+        predictions = logits.argmax(dim=-1)
+        class_names = ('none', 'single', 'double', 'triple', 'aromatic')
+        if logits.shape[-1] != len(class_names):
+            raise ValueError(
+                "Bond diagnostics expect classes "
+                "[none, single, double, triple, aromatic]"
+            )
+
+        metrics: Dict[str, torch.Tensor] = {}
+        eps = logits.new_tensor(1.0e-12)
+        predicted_bond = predictions.ne(0)
+        true_bond = labels.ne(0)
+        bond_tp = (predicted_bond & true_bond).sum().to(logits.dtype)
+        bond_precision = bond_tp / predicted_bond.sum().to(logits.dtype).clamp_min(eps)
+        bond_recall = bond_tp / true_bond.sum().to(logits.dtype).clamp_min(eps)
+        metrics['val_e_bonded_precision'] = bond_precision
+        metrics['val_e_bonded_recall'] = bond_recall
+        metrics['val_e_bonded_f1'] = (
+            2.0 * bond_precision * bond_recall
+            / (bond_precision + bond_recall).clamp_min(eps)
+        )
+
+        class_f1 = []
+        for class_idx, class_name in enumerate(class_names):
+            predicted_class = predictions.eq(class_idx)
+            true_class = labels.eq(class_idx)
+            true_positive = (predicted_class & true_class).sum().to(logits.dtype)
+            precision = (
+                true_positive
+                / predicted_class.sum().to(logits.dtype).clamp_min(eps)
+            )
+            recall = (
+                true_positive
+                / true_class.sum().to(logits.dtype).clamp_min(eps)
+            )
+            f1 = (
+                2.0 * precision * recall
+                / (precision + recall).clamp_min(eps)
+            )
+            metrics[f'val_e_{class_name}_precision'] = precision
+            metrics[f'val_e_{class_name}_recall'] = recall
+            metrics[f'val_e_{class_name}_f1'] = f1
+            class_f1.append(f1)
+        metrics['val_e_macro_f1'] = torch.stack(class_f1).mean()
         return metrics
 
     @staticmethod
@@ -4874,6 +4939,39 @@ class CFGVectorField(CTMCVectorField):
             data_src[f'{feat}_1_pred'] = x_1_sampled
 
         return g
+
+    @staticmethod
+    def guided_probabilities_from_logits(
+        uncond_logits: torch.Tensor,
+        cond_logits: torch.Tensor,
+        guide_weight: float,
+        temperature: float | torch.Tensor,
+        guidance_format: str,
+    ) -> torch.Tensor:
+        """Build a finite categorical CFG distribution in logit space."""
+        temperature_tensor = torch.as_tensor(
+            temperature,
+            dtype=uncond_logits.dtype,
+            device=uncond_logits.device,
+        ).clamp_min(torch.finfo(uncond_logits.dtype).eps)
+        if guidance_format == "log":
+            log_p_uncond = F.log_softmax(uncond_logits, dim=-1)
+            log_p_cond = F.log_softmax(cond_logits, dim=-1)
+            guided_logits = (
+                log_p_uncond
+                + guide_weight * (log_p_cond - log_p_uncond)
+            )
+        elif guidance_format == "linear":
+            guided_logits = (
+                uncond_logits
+                + guide_weight * (cond_logits - uncond_logits)
+            )
+        else:
+            raise ValueError(
+                f"Invalid guidance_format: {guidance_format}. "
+                'Choose "linear" or "log".'
+            )
+        return F.softmax(guided_logits / temperature_tensor, dim=-1)
     
     @staticmethod 
     def campbell_step_with_rate_matrix_cfg(p_1_given_t_uncond: torch.Tensor,
@@ -4929,16 +5027,18 @@ class CFGVectorField(CTMCVectorField):
             else:
                 raise ValueError(f"Invalid guidance_format: {guidance_format}. Choose 'linear' or 'log'.")
         
+            # Extrapolative CFG weights can make a linear rate combination
+            # negative. Off-diagonal CTMC rates must remain non-negative.
+            R_t_guided = R_t_guided.clamp_min(0.0)
+
         elif where_to_apply_guide == "probabilities":
-            if guidance_format == "log":
-                log_p_uncond = torch.log(p_1_given_t_uncond + eps)
-                log_p_cond = torch.log(p_1_given_t_cond + eps)
-                p_s_1 = torch.exp((1 - guide_weight) * log_p_uncond + guide_weight * log_p_cond)
-            elif guidance_format == "linear":
-                p_s_1 = (1 - guide_weight) * p_1_given_t_uncond + guide_weight * p_1_given_t_cond 
-            else:
-                raise ValueError(f"Invalid guidance_format: {guidance_format}. Choose 'linear' or 'log'.")
-            p_s_1 = F.softmax(p_s_1 / temperature, dim=-1) # softmax can do normalization
+            p_s_1 = CFGVectorField.guided_probabilities_from_logits(
+                uncond_val,
+                cond_val,
+                guide_weight,
+                temperature,
+                guidance_format,
+            )
             R_t_guided = CFGVectorField._compute_rate_matrix(p_s_1, xt, alpha_t, alpha_t_prime,
                                                 stochasticity, mask_index, n_classes)
 

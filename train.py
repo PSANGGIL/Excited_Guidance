@@ -136,6 +136,32 @@ class FiniteLossCallback(Callback):
             )
 
 
+def build_checkpoint_callbacks(
+    run_dir: Path,
+    config: dict,
+) -> tuple[ModelCheckpoint, ModelCheckpoint | None]:
+    """Build independent best-model and latest-state checkpoint callbacks."""
+    checkpoint_cfg = dict(config.get("checkpointing", {}))
+    checkpoint_dir = str(run_dir / "checkpoints")
+    checkpoint_cfg["dirpath"] = checkpoint_dir
+    save_latest = bool(checkpoint_cfg.pop("save_last", True))
+    best_callback = ModelCheckpoint(
+        save_last=False,
+        **checkpoint_cfg,
+    )
+    latest_callback = None
+    if save_latest:
+        latest_callback = ModelCheckpoint(
+            dirpath=checkpoint_dir,
+            filename="latest-epoch={epoch}-step={step}",
+            save_top_k=0,
+            save_last=True,
+            every_n_epochs=1,
+            monitor=None,
+        )
+    return best_callback, latest_callback
+
+
 def main():
     args = parse_args()
     torch.set_float32_matmul_precision("high")
@@ -172,10 +198,9 @@ def main():
     with (run_dir / "config.yaml").open("w", encoding="utf-8") as handle:
         yaml.safe_dump(config, handle, sort_keys=False)
 
-    checkpoint_cfg = dict(config.get("checkpointing", {}))
-    checkpoint_cfg["dirpath"] = str(run_dir / "checkpoints")
-    checkpoint_cfg.setdefault("save_last", True)
-    checkpoint_callback = ModelCheckpoint(**checkpoint_cfg)
+    checkpoint_callback, latest_checkpoint_callback = (
+        build_checkpoint_callbacks(run_dir, config)
+    )
 
     if args.no_wandb or args.debug or config.get("wandb", {}).get("mode") == "disabled":
         logger = CSVLogger(save_dir=str(run_dir), name="lightning_logs")
@@ -223,6 +248,8 @@ def main():
         FiniteLossCallback(),
         TQDMProgressBar(refresh_rate=1 if args.debug else 20),
     ]
+    if latest_checkpoint_callback is not None:
+        callbacks.append(latest_checkpoint_callback)
 
     early_cfg = dict(config.get("training", {}).get("early_stopping", {}))
     if early_cfg.pop("enabled", True):
