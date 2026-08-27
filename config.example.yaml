@@ -25,7 +25,11 @@ dataset:
 guidance:
   enabled: true
   guidance_type: classifier_free_guidance
-  p_uncond: 0.1
+  # First establish conditional response before re-enabling CFG.
+  p_uncond: 0.0
+  # Correct-condition loss must beat the same corruption with shuffled targets.
+  condition_margin: 0.05
+  condition_margin_weight: 0.5
 
 interpolant_scheduler:
   schedule_type:
@@ -40,7 +44,9 @@ interpolant_scheduler:
     e: 1.5
 
 lr_scheduler:
-  base_lr: 0.00025
+  # Batch size is 4x the original preset; use conservative sqrt scaling (2x)
+  # instead of linear scaling to protect CTMC/CFG training stability.
+  base_lr: 0.0005
   weight_decay: 1.0e-12
   warmup_length: 0.0
   restart_interval: 0
@@ -86,11 +92,13 @@ mol_fm:
       kwargs: {}
 
 training:
-  batch_size: 128
+  batch_size: 512
   num_workers: 4
   # Directed complete-graph edge limit. Actual batch size is reduced automatically.
-  max_num_edges: 400000
-  max_num_edges_eval: 400000
+  # On the 183-GB B200 this measured about 8.2 GiB for the lightweight model;
+  # larger values become CPU graph-construction bound before approaching 80% VRAM.
+  max_num_edges: 2000000
+  max_num_edges_eval: 2000000
   output_dir: ./runs
   evaluation:
     mols_to_sample: 64
@@ -124,19 +132,21 @@ training:
     limit_val_batches: 1.0
 
 vector_field:
-  n_vec_channels: 16
-  n_hidden_scalars: 256
-  n_hidden_edge_feats: 128
+  # Conservative lightweight preset. This changes tensor shapes, so training
+  # must start from scratch rather than resume an older checkpoint.
+  n_vec_channels: 12
+  n_hidden_scalars: 192
+  n_hidden_edge_feats: 96
   n_recycles: 1
-  n_molecule_updates: 8
+  n_molecule_updates: 4
   convs_per_update: 1
-  n_message_gvps: 3
-  n_update_gvps: 3
-  separate_mol_updaters: true
+  n_message_gvps: 2
+  n_update_gvps: 2
+  separate_mol_updaters: false
   message_norm: 100
   update_edge_w_distance: true
   rbf_dmax: 14
-  rbf_dim: 32
+  rbf_dim: 24
   n_cp_feats: 4
   stochasticity: 10.0
   high_confidence_threshold: 0.0

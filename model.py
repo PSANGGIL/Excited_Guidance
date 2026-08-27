@@ -127,7 +127,7 @@ def simplex_proj(x):
 
 def build_edge_idxs(n_atoms: int):
     """Builds an array of edge indices for a molecule with n_atoms.
-    
+
     The edge indicies are constructed such that the upper-triangle of the adjacency matrix is traversed before the lower triangle.
     Much of our infrastructure relies on this particular ordering of edge indicies within our graph objects.
     """
@@ -178,7 +178,7 @@ def gaussian(n: int, d: int, std: float = 1.0, simplex_center: bool = False):
     Generate a prior feature by sampling from a Gaussian distribution.
     """
     p = torch.randn(n, d) * std
-    
+
     if simplex_center:
         p = p + 1/d
     return p
@@ -201,7 +201,7 @@ def centered_normal_prior_batched_graph(g: dgl.DGLGraph, node_batch_idx: torch.T
         prior_sample = prior_sample - dgl.readout_nodes(g, feat='prior_sample', op='mean')[node_batch_idx]
 
     return prior_sample
-    
+
 
 
 def barycenter_prior(n: int, d: int, blur: float = 0.0):
@@ -276,7 +276,7 @@ def ctmc_masked_prior(n: int, d: int):
 
 def align_prior(prior_feat: torch.Tensor, dst_feat: torch.Tensor, permutation=False, rigid_body=False, n_alignments: int = 1):
     """
-    Aligns a prior feature to a destination feature. 
+    Aligns a prior feature to a destination feature.
     """
     for _ in range(n_alignments):
         if permutation:
@@ -350,7 +350,7 @@ def batched_rigid_alignment(x_0, x_1, pre_centered=False):
         b = 1
         x_0 = x_0.unsqueeze(0)
         x_1 = x_1.unsqueeze(0)
-         
+
     elif len(x_0.shape) == 3:
         b, n, d = x_0.shape
 
@@ -358,7 +358,7 @@ def batched_rigid_alignment(x_0, x_1, pre_centered=False):
     if pre_centered:
         x_0_mean = torch.zeros(b, 1, d)
         x_1_mean = torch.zeros(b, 1, d)
-        x_0_c = x_0 
+        x_0_c = x_0
         x_1_c = x_1
     else:
         x_0_mean = x_0.mean(dim=1, keepdim=True)
@@ -371,8 +371,8 @@ def batched_rigid_alignment(x_0, x_1, pre_centered=False):
     # H shold have shape (b, d, d)
     # below is the line for the unbatched version, followed by the batched version
     # H = x_0_c.T.mm(x_1_c)
-    H = torch.einsum('bnd,bnm->bdm', x_0_c, x_1_c)    
-    
+    H = torch.einsum('bnd,bnm->bdm', x_0_c, x_1_c)
+
     U, S, V = torch.svd(H)
     # Rotation matrix
     # U and V both have shape (b, d, d)
@@ -389,7 +389,7 @@ def batched_rigid_alignment(x_0, x_1, pre_centered=False):
         # x_0_mean has shape (b, 1, d)
         # t = x_1_mean - R.mm(x_0_mean.T).T # has shape (b, 1, D)
         t = x_1_mean - torch.einsum('bxy,bjk->bjy', R, x_0_mean)
-        
+
 
     # apply rotation to x_0_c
     # x_0_c has shape (b, n, d)
@@ -432,7 +432,7 @@ inference_prior_register = {
 }
 
 @torch.no_grad()
-def coupled_node_prior(dst_dict: dict, 
+def coupled_node_prior(dst_dict: dict,
                      prior_config: dict):
     prior_dict = {}
 
@@ -529,7 +529,7 @@ def exists(val):
 def _norm_no_nan(x, axis=-1, keepdims=False, eps=1e-8, sqrt=True):
     '''
     L2 norm of tensor clamped above a minimum value `eps`.
-    
+
     :param sqrt: if `False`, returns the square of the L2 norm
     '''
     out = torch.clamp(torch.sum(torch.square(x), axis, keepdims), min=eps)
@@ -543,7 +543,7 @@ def _norm_no_nan(x, axis=-1, keepdims=False, eps=1e-8, sqrt=True):
 def _rbf(D, D_min=0., D_max=20., D_count=16):
     '''
     From https://github.com/jingraham/neurips19-graph-protein-design
-    
+
     Returns an RBF embedding of `torch.Tensor` `D` along a new axis=-1.
     That is, if `D` has shape [...dims], then the returned tensor will have
     shape [...dims, D_count].
@@ -590,7 +590,7 @@ class GVP(nn.Module):
             self.Wcp = torch.zeros(dim_vectors_in, n_cp_feats*2, dtype=torch.float32).uniform_(-wcp_k, wcp_k)
             self.Wcp = nn.Parameter(self.Wcp)
 
-        
+
 
         # create Wu matrix
         if n_cp_feats > 0: # the number of vector features going into Wu is increased by n_cp_feats if we are using cross-product features
@@ -630,7 +630,7 @@ class GVP(nn.Module):
         assert n == self.dim_feats_in, 'scalar features have wrong dimensions'
 
         Vh = einsum('b v c, v h -> b h c', vectors, self.Wh) # has shape (batch_size, dim_h, 3)
-        
+
         # if we are including cross-product features, compute them here
         if self.n_cp_feats > 0:
             # convert dim_vectors_in vectors to n_cp_feats*2 vectors
@@ -663,7 +663,7 @@ class GVP(nn.Module):
         #     raise ValueError("NaNs in GVP forward pass")
 
         return (feats_out, vectors_out)
-    
+
 class _VDropout(nn.Module):
     '''
     Vector channel dropout where the elements of each
@@ -686,7 +686,7 @@ class _VDropout(nn.Module):
         ).unsqueeze(-1)
         x = mask * x / (1 - self.drop_rate)
         return x
-    
+
 class GVPDropout(nn.Module):
     """ Separate dropout for scalars and vectors. """
     def __init__(self, rate):
@@ -713,7 +713,7 @@ class GVPLayerNorm(nn.Module):
         vn = torch.sqrt(torch.mean(vn, dim=-2, keepdim=True) + self.eps ) + self.eps
         normed_vectors = vectors / vn
         return normed_feats, normed_vectors
-    
+
 
 
 class GVPConv(nn.Module):
@@ -725,7 +725,7 @@ class GVPConv(nn.Module):
                   n_message_gvps: int = 1, n_update_gvps: int = 1,
                   use_dst_feats: bool = False, rbf_dmax: float = 20, rbf_dim: int = 16,
                   edge_feat_size: int = 0, coords_range=10, message_norm: Union[float, str] = 10, dropout: float = 0.0,):
-        
+
         super().__init__()
 
         # self.edge_type = edge_type
@@ -756,20 +756,20 @@ class GVPConv(nn.Module):
             if i == 0:
                 dim_vectors_in += 1
                 dim_feats_in += rbf_dim + edge_feat_size
-                
+
             # if this is the first layer and we are using destination node features to compute messages, add them to the input dimensions
             if use_dst_feats and i == 0:
                 dim_vectors_in += vector_size
                 dim_feats_in += scalar_size
 
             message_gvps.append(
-                GVP(dim_vectors_in=dim_vectors_in, 
+                GVP(dim_vectors_in=dim_vectors_in,
                     dim_vectors_out=vector_size,
-                    n_cp_feats=n_cp_feats, 
-                    dim_feats_in=dim_feats_in, 
-                    dim_feats_out=scalar_size, 
-                    feats_activation=scalar_activation(), 
-                    vectors_activation=vector_activation(), 
+                    n_cp_feats=n_cp_feats,
+                    dim_feats_in=dim_feats_in,
+                    dim_feats_out=scalar_size,
+                    feats_activation=scalar_activation(),
+                    vectors_activation=vector_activation(),
                     vector_gating=True)
             )
         self.edge_message = nn.Sequential(*message_gvps)
@@ -778,17 +778,17 @@ class GVPConv(nn.Module):
         update_gvps = []
         for i in range(n_update_gvps):
             update_gvps.append(
-                GVP(dim_vectors_in=vector_size, 
-                    dim_vectors_out=vector_size, 
+                GVP(dim_vectors_in=vector_size,
+                    dim_vectors_out=vector_size,
                     n_cp_feats=n_cp_feats,
-                    dim_feats_in=scalar_size, 
-                    dim_feats_out=scalar_size, 
-                    feats_activation=scalar_activation(), 
-                    vectors_activation=vector_activation(), 
+                    dim_feats_in=scalar_size,
+                    dim_feats_out=scalar_size,
+                    feats_activation=scalar_activation(),
+                    vectors_activation=vector_activation(),
                     vector_gating=True)
             )
         self.node_update = nn.Sequential(*update_gvps)
-        
+
         self.dropout = GVPDropout(self.dropout_rate)
         self.message_layer_norm = GVPLayerNorm(self.scalar_size)
         self.update_layer_norm = GVPLayerNorm(self.scalar_size)
@@ -803,7 +803,7 @@ class GVPConv(nn.Module):
         else:
             self.agg_func = dgl_fn.sum
 
-    def forward(self, g: dgl.DGLGraph, 
+    def forward(self, g: dgl.DGLGraph,
                 scalar_feats: torch.Tensor,
                 coord_feats: torch.Tensor,
                 vec_feats: torch.Tensor,
@@ -911,7 +911,7 @@ class InterpolantScheduler(nn.Module):
         # check that schedule_type is a string or a dictionary
         if not isinstance(schedule_type, (str, dict)):
             raise ValueError('schedule_type must be a string or a dictionary')
-        
+
         # if it is a string, assign the same schedule_type to all features
         if isinstance(schedule_type, str):
             if schedule_type not in self.supported_schedule_types:
@@ -925,7 +925,7 @@ class InterpolantScheduler(nn.Module):
                 if feat not in schedule_type:
                     raise ValueError(f'must specify schedule_type for feature {feat}')
 
-            self.schedule_dict = schedule_type 
+            self.schedule_dict = schedule_type
 
         # if schedule_type == 'cosine':
         #     self.alpha_t = self.cosine_alpha_t
@@ -935,13 +935,13 @@ class InterpolantScheduler(nn.Module):
         #     self.alpha_t_prime = self.linear_alpha_t_prime
         # else:
         #     raise NotImplementedError(f'unsupported schedule_type: {schedule_type}')
-            
+
 
         # for features which have a cosine schedule, check that the parameter "nu" is provided
         for feat, schedule_type in self.schedule_dict.items():
             if schedule_type == 'cosine' and feat not in cosine_params:
                 raise ValueError(f'must specify cosine_params for feature {feat}')
-    
+
         # get a list of unique schedule types which are used
         self.schedule_types = list(set( self.schedule_dict.values() ))
 
@@ -949,7 +949,7 @@ class InterpolantScheduler(nn.Module):
         if 'cosine' in self.schedule_types:
             for feat in cosine_params:
                 cosine_params[feat] = torch.tensor(cosine_params[feat]).unsqueeze(0)
-        
+
         # save the cosine_params as an attribute
         self.cosine_params = cosine_params
 
@@ -957,7 +957,7 @@ class InterpolantScheduler(nn.Module):
 
         self.clamp_t = True
 
-        
+
 
     def update_device(self, t):
         if 'cosine' in self.schedule_types and t.device != self.device:
@@ -979,7 +979,7 @@ class InterpolantScheduler(nn.Module):
         alpha_t = self.alpha_t(t)
         weights = (1 - alpha_t, alpha_t)
         return weights
-    
+
     def loss_weights(self, t: torch.Tensor):
         alpha_t = self.alpha_t(t)
         # alpha_t_prime = self.alpha_t_prime(t)
@@ -989,7 +989,7 @@ class InterpolantScheduler(nn.Module):
         # clamp the weights with a minimum of 0.05 and a maximum of 1.5
         weights = torch.clamp(weights, min=0.05, max=1.5)
         return weights
-    
+
     def alpha_t(self, t: torch.Tensor) -> torch.Tensor:
 
         self.update_device(t)
@@ -1001,12 +1001,12 @@ class InterpolantScheduler(nn.Module):
                 alpha_t = self.cosine_alpha_t(t, nu=self.cosine_params[feat])
             elif schedule_type == 'linear':
                 alpha_t = self.linear_alpha_t(t)
-            
+
             per_feat_alpha.append(alpha_t)
 
         alpha_t = torch.cat(per_feat_alpha, dim=1)
         return alpha_t
-    
+
     def alpha_t_prime(self, t: torch.Tensor) -> torch.Tensor:
         self.update_device(t)
 
@@ -1017,7 +1017,7 @@ class InterpolantScheduler(nn.Module):
                 alpha_t_prime = self.cosine_alpha_t_prime(t, nu=self.cosine_params[feat])
             elif schedule_type == 'linear':
                 alpha_t_prime = self.linear_alpha_t_prime(t)
-            
+
             per_feat_alpha_prime.append(alpha_t_prime)
 
         alpha_t_prime = torch.cat(per_feat_alpha_prime, dim=1)
@@ -1030,7 +1030,7 @@ class InterpolantScheduler(nn.Module):
         t = t.unsqueeze(-1)
         alpha_t = 1 - torch.cos(torch.pi*0.5*torch.pow(t, nu)).square()
         return alpha_t
-    
+
     def cosine_alpha_t_prime(self, t: torch.Tensor, nu: torch.Tensor) -> torch.Tensor:
 
         if self.clamp_t:
@@ -1040,11 +1040,11 @@ class InterpolantScheduler(nn.Module):
         sin_input = torch.pi*torch.pow(t, nu)
         alpha_t_prime = torch.pi*0.5*torch.sin(sin_input)*nu*torch.pow(t, nu-1)
         return alpha_t_prime
-    
+
     def linear_alpha_t(self, t: torch.Tensor) -> Dict[str, torch.Tensor]:
         alpha_t = t.unsqueeze(-1)
         return alpha_t
-    
+
     def linear_alpha_t_prime(self, t: torch.Tensor) -> Dict[str, torch.Tensor]:
         alpha_t_prime = torch.ones_like(t).unsqueeze(-1)
         return alpha_t_prime
@@ -1062,10 +1062,10 @@ class LRScheduler:
                  optimizer: Optimizer,
                  base_lr: float,
                  weight_decay: float = 0,
-                 warmup_length: float = 0, 
-                 restart_interval: float = 0, 
+                 warmup_length: float = 0,
+                 restart_interval: float = 0,
                  restart_type: str = None):
-        
+
         self.model = model
         self.optimizer = optimizer
         self.base_lr = base_lr
@@ -1090,7 +1090,7 @@ class LRScheduler:
         if epoch_exact <= self.warmup_length and self.warmup_length != 0:
             self.optimizer.param_groups[0]['lr'] = self.base_lr*epoch_exact/self.warmup_length
             return
-        
+
         if self.restart_interval == 0:
             return
 
@@ -1105,7 +1105,7 @@ class LRScheduler:
             # model_file = self.output_dir / f'model_on_restart_{epoch_exact:.0f}.pt'
             # save_model(self.model, model_file)
 
-    
+
     def linear_restart(self, epochs_into_interval):
         new_lr = -1.0*self.base_lr*epochs_into_interval/self.restart_interval + self.base_lr
         return new_lr
@@ -1113,7 +1113,7 @@ class LRScheduler:
     def cosine_restart(self, epochs_into_interval):
         new_lr = 0.5*self.base_lr*(1+np.cos(epochs_into_interval*np.pi/self.restart_interval))
         return new_lr
-    
+
     def get_lr(self) -> float:
         return self.optimizer.param_groups[0]['lr']
 
@@ -1121,21 +1121,21 @@ class LRScheduler:
 # Property embeddings (original molguidance/models/property_embeddings.py)
 # ========================================================================================
 
-class PropertyEmbedder(nn.Module): 
-    def __init__(self, input_dim: int = 1, 
+class PropertyEmbedder(nn.Module):
+    def __init__(self, input_dim: int = 1,
                  embedding_dim: int = 128,
                  start: float = 0.0246,
                  stop: float = 0.6221,
-                 n_gaussians: int = 5,  
+                 n_gaussians: int = 5,
                  use_activation: bool = True):
         """
         start (float): is min value of the property, default is for gap
-        stop (float): is max value of the property, default is for gap 
+        stop (float): is max value of the property, default is for gap
         """
         super().__init__()
-        
+
         self.embedding_dim = embedding_dim
-        
+
         # First layer
         layers = [nn.Linear(n_gaussians, embedding_dim)]
         if use_activation:
@@ -1146,7 +1146,7 @@ class PropertyEmbedder(nn.Module):
 
         # Gaussian expansion layer
         self.gaussian_expansion = GaussianExpansion(start=start, stop=stop, n_gaussians=n_gaussians, trainable=False)
-        
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
@@ -1157,7 +1157,7 @@ class PropertyEmbedder(nn.Module):
         expanded_x = self.gaussian_expansion(x)
         return self.mlp(expanded_x)
 
-class GaussianExpansion(nn.Module): 
+class GaussianExpansion(nn.Module):
     # GaussianExpansion class code reference: https://github.com/atomistic-machine-learning/cG-SchNet/blob/main/nn_classes.py#L616
     r"""Expansion layer using a set of Gaussian functions.
 
@@ -1221,11 +1221,11 @@ bond_type_to_idx[None] = 0
 
 class SampledMolecule:
 
-    def __init__(self, g: dgl.DGLGraph, 
-        atom_type_map: List[str], 
+    def __init__(self, g: dgl.DGLGraph,
+        atom_type_map: List[str],
         traj_frames: Dict[str, torch.Tensor] = None,
-        ctmc_mol: bool = False, # whether the molecule was sampled from a CTMC model. Important because one-hot encodings will contain a mask token. 
-        exclude_charges: bool = False, 
+        ctmc_mol: bool = False, # whether the molecule was sampled from a CTMC model. Important because one-hot encodings will contain a mask token.
+        exclude_charges: bool = False,
         align_traj: bool = True,
         build_xt_traj=True,
         build_ep_traj=True,):
@@ -1239,13 +1239,13 @@ class SampledMolecule:
 
         if ctmc_mol:
             atom_type_map.append('Se') # masked molecules will show up as selenium
-        
+
         # save the graph
         self.g = g
 
         self.positions, self.atom_types, self.atom_charges, self.bond_types, self.bond_src_idxs, self.bond_dst_idxs = extract_moldata_from_graph(
-            g, 
-            atom_type_map, 
+            g,
+            atom_type_map,
             exclude_charges=exclude_charges,
             ctmc_mol=self.ctmc_mol)
 
@@ -1313,12 +1313,12 @@ class SampledMolecule:
         g.edata['ue_mask'] = torch.ones(g.num_edges()).bool()
 
         return cls(g, atom_type_map=atom_type_map)
-    
+
     # this code is adapted from MiDi: https://github.com/cvignac/MiDi/blob/ba07fc5b1313855c047ba0b90e7aceae47e34e38/midi/analysis/rdkit_functions.py
     def build_molecule(self):
         mol = build_molecule(self.positions, self.atom_types, self.atom_charges, self.bond_src_idxs, self.bond_dst_idxs, self.bond_types)
         return mol
-    
+
     def compute_valencies(self):
         """Compute the valencies of every atom in the molecule. Returns a tensor of shape (num_atoms,)."""
         adj = torch.zeros((self.num_atoms, self.num_atoms))
@@ -1329,7 +1329,7 @@ class SampledMolecule:
         adj[self.bond_dst_idxs, self.bond_src_idxs] = adjusted_bond_types
         valencies = torch.sum(adj, dim=-1).long()
         return valencies
-    
+
     def process_traj_frames(self, traj_frames: Dict[str, torch.Tensor], ep_traj: bool = False):
         """Converts the trajectory frames to a list of rdkit molecules."""
         # convert the frames to a list of rdkit molecules
@@ -1365,7 +1365,7 @@ class SampledMolecule:
 
             # extract mol data from graph
             positions, atom_types, atom_charges, bond_types, bond_src_idxs, bond_dst_idxs = extract_moldata_from_graph(
-                g_dummy, 
+                g_dummy,
                 self.atom_type_map,
                 ctmc_mol=self.ctmc_mol)
 
@@ -1385,7 +1385,7 @@ class SampledMolecule:
             print(f'WARNING: {len(traj_frames) - len(traj_mols)} frames were not converted to rdkit molecules')
 
         return traj_mols
-    
+
 
 def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str], exclude_charges: bool = False, ctmc_mol: bool = False):
 
@@ -1457,7 +1457,7 @@ def build_molecule(positions, atom_types, atom_charges, bond_src_idxs, bond_dst_
 
 
 def copy_graph(g: dgl.DGLGraph) -> dgl.DGLGraph:
-    
+
     # get edges
     edges = g.edges(form='uv')
 
@@ -1621,15 +1621,15 @@ class EndpointVectorField(nn.Module):
                     canonical_feat_order: list,
                     interpolant_scheduler: InterpolantScheduler,
                     n_charges: int = 6,
-                    n_bond_types: int = 5, 
+                    n_bond_types: int = 5,
                     n_vec_channels: int = 16,
-                    n_cp_feats: int = 0, 
+                    n_cp_feats: int = 0,
                     n_hidden_scalars: int = 64,
                     n_hidden_edge_feats: int = 64,
                     n_recycles: int = 1,
-                    n_molecule_updates: int = 2, 
+                    n_molecule_updates: int = 2,
                     convs_per_update: int = 2,
-                    n_message_gvps: int = 3, 
+                    n_message_gvps: int = 3,
                     n_update_gvps: int = 3,
                     separate_mol_updaters: bool = False,
                     message_norm: Union[float, str] = 100,
@@ -1673,7 +1673,7 @@ class EndpointVectorField(nn.Module):
 
         self.continuous_inv_temp_schedule = continuous_inv_temp_schedule
         self.continouts_inv_temp_max = continuous_inv_temp_max
-        self.continuous_inv_temp_func = self.build_continuous_inv_temp_func(self.continuous_inv_temp_schedule, self.continouts_inv_temp_max) 
+        self.continuous_inv_temp_func = self.build_continuous_inv_temp_func(self.continuous_inv_temp_schedule, self.continouts_inv_temp_max)
 
         self.n_cat_feats = { # number of possible values for each categorical variable (not including mask tokens in the case of CTMC)
             'a': n_atom_types,
@@ -1776,9 +1776,9 @@ class EndpointVectorField(nn.Module):
                 f"{len(self.node_position_updaters)} configured updaters"
             )
         return updater_idx
-        
 
-    def forward(self, g: dgl.DGLGraph, t: torch.Tensor, 
+
+    def forward(self, g: dgl.DGLGraph, t: torch.Tensor,
                  node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, apply_softmax=False, remove_com=False):
         """Predict x_1 (trajectory destination) given x_t"""
         device = g.device
@@ -1815,8 +1815,8 @@ class EndpointVectorField(nn.Module):
                 for conv_idx, conv in enumerate(self.conv_layers):
 
                     # perform a single convolution which updates node scalar and vector features (but not positions)
-                    node_scalar_features, node_vec_features = conv(g, 
-                            scalar_feats=node_scalar_features, 
+                    node_scalar_features, node_vec_features = conv(g,
+                            scalar_feats=node_scalar_features,
                             coord_feats=node_positions,
                             vec_feats=node_vec_features,
                             edge_feats=edge_features,
@@ -1834,7 +1834,7 @@ class EndpointVectorField(nn.Module):
 
                         edge_features = self.edge_updaters[updater_idx](g, node_scalar_features, edge_features, d=d)
 
-            
+
             # predict final charges and atom type logits
             node_scalar_features = self.node_output_head(node_scalar_features)
             atom_type_logits = node_scalar_features[:, :self.n_atom_types]
@@ -1870,7 +1870,7 @@ class EndpointVectorField(nn.Module):
                     dst_dict[feat] = torch.softmax(dst_dict[feat], dim=-1) # apply softmax to this feature
 
         return dst_dict
-    
+
     def precompute_distances(self, g: dgl.DGLGraph, node_positions=None):
         """Precompute the pairwise distances between all nodes in the graph."""
 
@@ -1885,13 +1885,13 @@ class EndpointVectorField(nn.Module):
             dij = _norm_no_nan(g.edata['x_diff'], keepdims=True) + 1e-8
             x_diff = g.edata['x_diff'] / dij
             d = _rbf(dij.squeeze(1), D_max=self.rbf_dmax, D_count=self.rbf_dim)
-        
+
         return x_diff, d
-      
-    def integrate(self, g: dgl.DGLGraph, 
+
+    def integrate(self, g: dgl.DGLGraph,
         node_batch_idx: torch.Tensor,
-        upper_edge_mask: torch.Tensor, 
-        n_timesteps: int, 
+        upper_edge_mask: torch.Tensor,
+        n_timesteps: int,
         visualize=False, **kwargs):
         """Integrate the trajectories of molecules along the vector field."""
 
@@ -1927,7 +1927,7 @@ class EndpointVectorField(nn.Module):
                 init_frame = torch.split(init_frame, split_sizes)
                 traj_frames[feat] = [ init_frame ]
                 traj_frames[f'{feat}_1_pred'] = []
-    
+
         for s_idx in range(1,t.shape[0]):
 
             # get the next timepoint (s) and the current timepoint (t)
@@ -1960,7 +1960,7 @@ class EndpointVectorField(nn.Module):
 
                     # record endpoint frame for visualization
                     ep_key = f'{feat}_1_pred'
-                    if ep_key not in g_data_src: 
+                    if ep_key not in g_data_src:
                         # the endpoint key wont be there for VectorField because
                         # i haven't dervived a method of obtaining intermediate xhats from the vector field
                         continue
@@ -1995,21 +1995,21 @@ class EndpointVectorField(nn.Module):
 
 
             return g, reshaped_traj_frames
-        
+
         return g
-    
+
     def step(self, g: dgl.DGLGraph, s_i: torch.Tensor, t_i: torch.Tensor,
              alpha_t_i: torch.Tensor, alpha_s_i: torch.Tensor, alpha_t_prime_i: torch.Tensor,
              node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor,
              inv_temp_func=None,
             **kwargs):
-        
+
         if inv_temp_func is None:
             inv_temp_func = self.continuous_inv_temp_func
-        
+
         # predict the destination of the trajectory given the current timepoint
         dst_dict = self(
-            g, 
+            g,
             t=torch.full((g.batch_size,), t_i, device=g.device),
             node_batch_idx=node_batch_idx,
             upper_edge_mask=upper_edge_mask,
@@ -2092,20 +2092,20 @@ class EndpointVectorField(nn.Module):
 
 class VectorField(EndpointVectorField):
 
-    def forward(self, g: dgl.DGLGraph, t: torch.Tensor, 
+    def forward(self, g: dgl.DGLGraph, t: torch.Tensor,
                  node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, apply_softmax=False, remove_com=False):
-        
+
         dst_dict = super().forward(g, t, node_batch_idx, upper_edge_mask, apply_softmax, remove_com)
         dst_dict['x'] = dst_dict['x'] - g.ndata['x_t']
         return dst_dict
-    
+
     def step(self, g: dgl.DGLGraph, s_i: torch.Tensor, t_i: torch.Tensor,
              alpha_t_i: torch.Tensor, alpha_s_i: torch.Tensor, alpha_t_prime_i: torch.Tensor,
              node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor):
-        
+
         # predict the destination of the trajectory given the current timepoint
         vec_field = self(
-            g, 
+            g,
             t=torch.full((g.batch_size,), t_i, device=g.device),
             node_batch_idx=node_batch_idx,
             upper_edge_mask=upper_edge_mask,
@@ -2191,16 +2191,16 @@ class DirichletVectorField(EndpointVectorField):
         g.edata[f'e_t'][~upper_edge_mask] = ue_samples
 
         return g
-    
+
     def step(self, g: dgl.DGLGraph, s_i: torch.Tensor, t_i: torch.Tensor,
              alpha_t_i: torch.Tensor, alpha_s_i: torch.Tensor, alpha_t_prime_i: torch.Tensor,
              node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor):
-        
+
         # alpha_t_i has shape (n_feats,)
-        
+
         # predict the destination of the trajectory given the current timepoint
         dst_dict = self(
-            g, 
+            g,
             t=torch.full((g.batch_size,), t_i, device=g.device),
             node_batch_idx=node_batch_idx,
             upper_edge_mask=upper_edge_mask,
@@ -2249,7 +2249,7 @@ class DirichletVectorField(EndpointVectorField):
             endpoint_probs = dst_dict[feat] # has shape (n_nodes, n_cat)
             endpoint_probs = endpoint_probs.transpose(0, 1).unsqueeze(-1) # has shape (n_cat, n_nodes, 1)
             marginal_vec_field = ( endpoint_probs * cond_vec_fields ).sum(dim=0)
-            
+
             # take integration step
             x_s = x_t + marginal_vec_field*(w_s_feat - w_t_feat)
 
@@ -2293,9 +2293,9 @@ class DirichletVectorField(EndpointVectorField):
         e_1_pred[upper_edge_mask] = dst_dict['e']
         e_1_pred[~upper_edge_mask] = dst_dict['e']
         g.edata['e_1_pred'] = e_1_pred
-        
+
         return g
-    
+
     def project_simplex(self, x_s: torch.Tensor):
         n, c = x_s.shape
         ref_sum = torch.ones(n, dtype=x_s.dtype, device=x_s.device)
@@ -2334,7 +2334,7 @@ class NodePositionUpdate(nn.Module):
     def forward(self, scalars: torch.Tensor, positions: torch.Tensor, vectors: torch.Tensor):
         _, vector_updates = self.gvps((scalars, vectors))
         return positions + vector_updates.squeeze(1)
-    
+
 class EdgeUpdate(nn.Module):
 
     def __init__(self, n_node_scalars, n_edge_feats, update_edge_w_distance=False, rbf_dim=16):
@@ -2356,7 +2356,7 @@ class EdgeUpdate(nn.Module):
         self.edge_norm = nn.LayerNorm(n_edge_feats)
 
     def forward(self, g: dgl.DGLGraph, node_scalars, edge_feats, d):
-        
+
 
         # get indicies of source and destination nodes
         src_idxs, dst_idxs = g.edges()
@@ -2378,9 +2378,9 @@ class EdgeUpdate(nn.Module):
 # ========================================================================================
 
 PROPERTY_MAP = {
-        'A': 0, 'B': 1, 'C': 2, 'mu': 3, 'alpha': 4, 
+        'A': 0, 'B': 1, 'C': 2, 'mu': 3, 'alpha': 4,
         'homo': 5, 'lumo': 6, 'gap': 7, 'r2': 8,
-        'zpve': 9, 'u0': 10, 'u298': 11, 'h298': 12, 
+        'zpve': 9, 'u0': 10, 'u298': 11, 'h298': 12,
         'g298': 13, 'cv': 14, 'u0_atom': 15, 'u298_atom': 16,
         'h298_atom': 17, 'g298_atom': 18
     }
@@ -2396,10 +2396,10 @@ class CTMCVectorField(EndpointVectorField):
     # we also do purity sampling in a slightly different way that in theory would be slightly less performant but is
     # computationally much more efficient when working with batched graphs
 
-    def __init__(self, *args, 
-                 stochasticity: float = 0.0, 
-                 high_confidence_threshold: float = 0.0, 
-                 dfm_type: str = 'campbell', 
+    def __init__(self, *args,
+                 stochasticity: float = 0.0,
+                 high_confidence_threshold: float = 0.0,
+                 dfm_type: str = 'campbell',
                  cat_temperature_schedule: Union[str, Callable, float] = 0.05,
                  cat_temp_decay_max: float = 0.8,
                  cat_temp_decay_a: float = 2,
@@ -2414,7 +2414,7 @@ class CTMCVectorField(EndpointVectorField):
         super().__init__(*args, has_mask=True, **kwargs) # initialize endpoint vector field
         self.property_embedding_dim = property_embedding_dim
         self.training_mode = training_mode
-        self.conditional_generation = conditional_generation    
+        self.conditional_generation = conditional_generation
         self.property_embedder = property_embedder
         self.properties_handle_method = properties_handle_method
         # Normalization metadata are immutable during a sampling run. Cache the
@@ -2435,7 +2435,7 @@ class CTMCVectorField(EndpointVectorField):
             cat_temperature_schedule=cat_temperature_schedule,
             cat_temp_decay_max=cat_temp_decay_max,
             cat_temp_decay_a=cat_temp_decay_a)
-        
+
         # configure forward weight schedule
         self.forward_weight_schedule = forward_weight_schedule
         self.fw_beta_a = fw_beta_a
@@ -2489,9 +2489,9 @@ class CTMCVectorField(EndpointVectorField):
             cat_temp_func = cat_temperature_schedule
         else:
             raise ValueError(f"Invalid cat_temperature_schedule: {cat_temperature_schedule}")
-        
+
         return cat_temp_func
-    
+
     def build_fw_schedule(self, forward_weight_schedule, fw_beta_a, fw_beta_b, fw_beta_max):
 
         if forward_weight_schedule == 'beta':
@@ -2502,9 +2502,9 @@ class CTMCVectorField(EndpointVectorField):
             forward_weight_func = forward_weight_schedule
         else:
             raise ValueError(f"Invalid forward_weight_schedule: {forward_weight_schedule}")
-        
+
         return forward_weight_func
-        
+
     def sample_conditional_path(self, g, t, node_batch_idx, edge_batch_idx, upper_edge_mask):
         # sample p(g_t|g_0,g_1)
         # this includes the standard probability path for positions and CTMC probability paths for categorical features
@@ -2547,7 +2547,7 @@ class CTMCVectorField(EndpointVectorField):
         alpha_t_e = alpha_t[:, edge_feat_idx][edge_batch_idx][upper_edge_mask]
         et_upper = g.edata['e_1_true'][upper_edge_mask].argmax(-1)
         et_upper[ torch.rand(num_edges, device=device) < 1 - alpha_t_e ] = self.mask_idxs['e']
-        
+
         n,d = g.edata['e_1_true'].shape
         e_t = torch.zeros((n,d+1), dtype=g.edata['e_1_true'].dtype, device=g.device)
         et_upper_onehot = one_hot(et_upper, num_classes=self.n_cat_feats['e']+1).float()
@@ -2557,11 +2557,11 @@ class CTMCVectorField(EndpointVectorField):
 
         return g
 
-    def integrate(self, g: dgl.DGLGraph, node_batch_idx: torch.Tensor, 
-        upper_edge_mask: torch.Tensor, n_timesteps: int, 
-        visualize=False, 
+    def integrate(self, g: dgl.DGLGraph, node_batch_idx: torch.Tensor,
+        upper_edge_mask: torch.Tensor, n_timesteps: int,
+        visualize=False,
         dfm_type='campbell',
-        stochasticity=8.0, 
+        stochasticity=8.0,
         high_confidence_threshold=0.9,
         cat_temp_func=None,
         forward_weight_func=None,
@@ -2575,10 +2575,10 @@ class CTMCVectorField(EndpointVectorField):
         multilple_values_to_one_property: List[float|int] | None = None,
         **kwargs):
         """Integrate the trajectories of molecules along the vector field."""
-        
+
         # TODO: this overrides EndpointVectorField.integrate just because it has some extra arguments
         # we should refactor this so that we don't have to copy the entire function
-        
+
         self.properties_for_sampling = properties_for_sampling
         self.property_name = property_name
         self.conditional_generation = conditional_generation
@@ -2630,7 +2630,7 @@ class CTMCVectorField(EndpointVectorField):
                 init_frame = torch.split(init_frame, split_sizes)
                 traj_frames[feat] = [ init_frame ]
                 traj_frames[f'{feat}_1_pred'] = []
-    
+
         for s_idx in range(1,t.shape[0]):
 
             # get the next timepoint (s) and the current timepoint (t)
@@ -2647,21 +2647,21 @@ class CTMCVectorField(EndpointVectorField):
                 last_step = False
 
             # compute next step and set x_t = x_s
-            g = self.step(g, s_i, t_i, alpha_t_i, alpha_s_i, 
-                alpha_t_prime_i, 
-                node_batch_idx, 
-                edge_batch_idx, 
-                upper_edge_mask, 
+            g = self.step(g, s_i, t_i, alpha_t_i, alpha_s_i,
+                alpha_t_prime_i,
+                node_batch_idx,
+                edge_batch_idx,
+                upper_edge_mask,
                 cat_temp_func=cat_temp_func,
                 forward_weight_func=forward_weight_func,
                 dfm_type=dfm_type,
-                stochasticity=stochasticity, 
+                stochasticity=stochasticity,
                 high_confidence_threshold=high_confidence_threshold,
                 last_step=last_step,
                 normalization_file_path=normalization_file_path,
                 conditional_generation=conditional_generation,
                 property_name=property_name,
-                properties_for_sampling=properties_for_sampling, 
+                properties_for_sampling=properties_for_sampling,
                 training_mode=training_mode,
                 **kwargs)
 
@@ -2714,17 +2714,17 @@ class CTMCVectorField(EndpointVectorField):
 
 
             return g, reshaped_traj_frames
-        
+
         return g
 
     def step(self, g: dgl.DGLGraph, s_i: torch.Tensor, t_i: torch.Tensor,
              alpha_t_i: torch.Tensor, alpha_s_i: torch.Tensor, alpha_t_prime_i: torch.Tensor,
              node_batch_idx: torch.Tensor, edge_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor,
              cat_temp_func: Callable,
-             forward_weight_func: Callable, 
+             forward_weight_func: Callable,
              dfm_type: str = 'campbell',
              stochasticity: float = 8.0,
-             high_confidence_threshold: float = 0.9, 
+             high_confidence_threshold: float = 0.9,
              last_step: bool = False,
              inv_temp_func: Callable = None,
             normalization_file_path:str=None,
@@ -2754,17 +2754,17 @@ class CTMCVectorField(EndpointVectorField):
 
         if conditional_generation and not training_mode:
             assert self.properties_for_sampling is not None or self.multilple_values_to_one_property is not None , "Properties for sampling must be provided for conditional generation"
-        
+
         # predict the destination of the trajectory given the current timepoint
         dst_dict = self(
-            g, 
+            g,
             t=torch.full((g.batch_size,), t_i, device=g.device),
             node_batch_idx=node_batch_idx,
             upper_edge_mask=upper_edge_mask,
             apply_softmax=True,
             remove_com=True,
         )
-        
+
         dt = s_i - t_i
 
         # take integration step for positions
@@ -2799,15 +2799,15 @@ class CTMCVectorField(EndpointVectorField):
 
 
                 xt, x_1_sampled = \
-                self.campbell_step(p_1_given_t=p_s_1, 
-                                xt=xt, 
-                                stochasticity=eta, 
-                                hc_thresh=hc_thresh, 
-                                alpha_t=alpha_t_i[feat_idx], 
+                self.campbell_step(p_1_given_t=p_s_1,
+                                xt=xt,
+                                stochasticity=eta,
+                                hc_thresh=hc_thresh,
+                                alpha_t=alpha_t_i[feat_idx],
                                 alpha_t_prime=alpha_t_prime_i[feat_idx],
-                                dt=dt, 
-                                batch_size=g.batch_size, 
-                                batch_num_nodes=g.batch_num_edges()//2 if feat == 'e' else g.batch_num_nodes(), 
+                                dt=dt,
+                                batch_size=g.batch_size,
+                                batch_num_nodes=g.batch_num_edges()//2 if feat == 'e' else g.batch_num_nodes(),
                                 n_classes=self.n_cat_feats[feat]+1,
                                 mask_index=self.mask_idxs[feat],
                                 last_step=last_step,
@@ -2819,9 +2819,9 @@ class CTMCVectorField(EndpointVectorField):
                 x_1_sampled = torch.cat([p_s_1, torch.zeros_like(p_s_1[:, :1])], dim=-1)
 
                 xt = self.gat_step(
-                    p_1_given_t=p_s_1, 
-                    xt=xt, 
-                    alpha_t=alpha_t_i[feat_idx], 
+                    p_1_given_t=p_s_1,
+                    xt=xt,
+                    alpha_t=alpha_t_i[feat_idx],
                     alpha_t_prime=alpha_t_prime_i[feat_idx],
                     forward_weight=forward_weight_func(t_i),
                     dt=dt,
@@ -2831,8 +2831,8 @@ class CTMCVectorField(EndpointVectorField):
                     mask_index=self.mask_idxs[feat],
                     batch_idx=edge_batch_idx[upper_edge_mask] if feat == 'e' else node_batch_idx,
                 )
-                                   
-            
+
+
             # if we are doing edge features, we need to modify xt and x_1_sampled to have upper and lower edges
             if feat == 'e':
                 e_t = torch.zeros_like(g.edata['e_t'])
@@ -2844,25 +2844,25 @@ class CTMCVectorField(EndpointVectorField):
                 e_1_sampled[upper_edge_mask] = x_1_sampled
                 e_1_sampled[~upper_edge_mask] = x_1_sampled
                 x_1_sampled = e_1_sampled
-            
+
             data_src[f'{feat}_t'] = xt
             data_src[f'{feat}_1_pred'] = x_1_sampled
 
         return g
 
-        
+
     def campbell_step(self, p_1_given_t: torch.Tensor,
-                      xt: torch.Tensor, 
-                      stochasticity: float, 
-                      hc_thresh: float, 
-                      alpha_t: float, 
+                      xt: torch.Tensor,
+                      stochasticity: float,
+                      hc_thresh: float,
+                      alpha_t: float,
                       alpha_t_prime: float,
                       dt,
                       batch_size: int,
                       batch_num_nodes: torch.Tensor,
                       n_classes: int,
                       mask_index:int,
-                      last_step: bool, 
+                      last_step: bool,
                       batch_idx: torch.Tensor,
     ):
         if not bool(torch.isfinite(p_1_given_t).all()):
@@ -2913,11 +2913,11 @@ class CTMCVectorField(EndpointVectorField):
         xt = one_hot(xt, num_classes=n_classes).float()
         x1 = one_hot(x1, num_classes=n_classes).float()
         return xt, x1
-    
-    def gat_step(self, 
+
+    def gat_step(self,
                 p_1_given_t: torch.Tensor,
-                xt: torch.Tensor, 
-                alpha_t: float, 
+                xt: torch.Tensor,
+                alpha_t: float,
                 alpha_t_prime: float,
                 forward_weight: float,
                 dt,
@@ -2944,7 +2944,7 @@ class CTMCVectorField(EndpointVectorField):
 
         # compute the backward probability velocity
         u_backward = alpha_t_prime / (alpha_t + 1e-8) * (delta_xt - delta_mask)
-    
+
         # compute the probability velocity
         backward_weight = forward_weight - 1
         pvel = forward_weight*u_forward - backward_weight*u_backward
@@ -2976,18 +2976,18 @@ class CTMCVectorField(EndpointVectorField):
             self._normalization_cache = payload
         return self._normalization_cache
 
-    def forward(self, g: dgl.DGLGraph, t: torch.Tensor, 
-                node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, 
+    def forward(self, g: dgl.DGLGraph, t: torch.Tensor,
+                node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor,
                 apply_softmax=False, remove_com=False):
         device = g.device
-        
+
         with g.local_scope():
             # Determine if this is conditional generation
             is_conditional = len(t.shape) > 1 or self.conditional_generation
-            
+
             # Gather base features
             time_tensor = t[:, 0] if len(t.shape) > 1 else t
-            
+
             base_features = [
                 g.ndata['a_t'],
                 time_tensor[node_batch_idx].unsqueeze(-1)
@@ -3001,17 +3001,17 @@ class CTMCVectorField(EndpointVectorField):
                 if is_conditional:
                     # Initialize prop_emb as None
                     prop_emb = None
-                    
+
                     # Case 1: Property info in t (for training)
                     if len(t.shape) > 1:
                         prop_emb = t[:, 1:][node_batch_idx]
-                    
+
                     # Case 2: Explicit sampling properties (for sampling)
                     elif self.properties_for_sampling is not None or self.multilple_values_to_one_property is not None:
                         # Convert scalar to tensor properly
                         if self.properties_for_sampling is not None:
                             assert isinstance(self.properties_for_sampling, (int, float))
-                        
+
                         # Load normalization parameters if needed
                         norm_params = self._load_normalization_params(
                             self.normalization_file_path
@@ -3066,13 +3066,13 @@ class CTMCVectorField(EndpointVectorField):
                             if norm_params is not None:
                                 properties_for_sampling = (_transform_raw_property(properties_for_sampling) - mean) / std
                             properties_batch = torch.full((g.batch_size, 1), properties_for_sampling, device=device)
-                            
+
                         # Get embedding
                         prop_emb = self.property_embedder(properties_batch)
-                        
+
                         # Repeat for each node in graph
                         prop_emb = prop_emb[node_batch_idx]
-                    
+
                     if prop_emb is None:
                         raise ValueError("No property information available for conditional generation")
 
@@ -3111,15 +3111,15 @@ class CTMCVectorField(EndpointVectorField):
             num_nodes = g.num_nodes()
             node_vec_features = torch.zeros((num_nodes, self.n_vec_channels, 3), device=device)
             edge_features = g.edata['e_t']
-            edge_features = self.edge_embedding(edge_features)      
+            edge_features = self.edge_embedding(edge_features)
 
             x_diff, d = self.precompute_distances(g)
             for recycle_idx in range(self.n_recycles):
                 for conv_idx, conv in enumerate(self.conv_layers):
 
                     # perform a single convolution which updates node scalar and vector features (but not positions)
-                    node_scalar_features, node_vec_features = conv(g, 
-                            scalar_feats=node_scalar_features, 
+                    node_scalar_features, node_vec_features = conv(g,
+                            scalar_feats=node_scalar_features,
                             coord_feats=node_positions,
                             vec_feats=node_vec_features,
                             edge_feats=edge_features,
@@ -3137,7 +3137,7 @@ class CTMCVectorField(EndpointVectorField):
 
                         edge_features = self.edge_updaters[updater_idx](g, node_scalar_features, edge_features, d=d)
 
-            
+
             # predict final charges and atom type logits
             node_scalar_features = self.node_output_head(node_scalar_features)
             atom_type_logits = node_scalar_features[:, :self.n_atom_types]
@@ -3185,9 +3185,9 @@ class FlowMol(pl.LightningModule):
     edge_feats = ['e']
 
     def __init__(self,
-                 atom_type_map: List[str],               
+                 atom_type_map: List[str],
                  n_atoms_hist_file: str,
-                 marginal_dists_file: str,                 
+                 marginal_dists_file: str,
                  n_atom_charges: int = 6,
                  n_bond_types: int = 5,
                  sample_interval: float = 1.0, # how often to sample molecules from the model, measured in epochs
@@ -3295,7 +3295,7 @@ class FlowMol(pl.LightningModule):
             nn.Linear(property_embedding_dim, property_embedding_dim),
             nn.LayerNorm(property_embedding_dim)
         )
-        
+
         # remember set normalization to false in GaussianExpansion, otherwise start and stop values are wrong
         if gaussian_expansion:
             self.property_embedder = PropertyEmbedder(input_dim=1, embedding_dim=property_embedding_dim,
@@ -3304,7 +3304,7 @@ class FlowMol(pl.LightningModule):
 
         if self.weight_ae and parameterization == 'vector-field':
             raise NotImplementedError('weighting the atom and edge losses is not yet implemented for the vector-field parameterization')
-        
+
         if self.target_blur != 0.0 and parameterization in ('vector-field', 'ctmc'):
             raise NotImplementedError(
                 'target_blur is not supported for vector-field or CTMC parameterization'
@@ -3312,7 +3312,7 @@ class FlowMol(pl.LightningModule):
 
         if self.target_blur < 0.0:
             raise ValueError('target_blur must be non-negative')
-        
+
         # if provided filepath to data dir does not exist, assume it is relative to the repo root
         processed_data_dir = Path(self.marginal_dists_file).parent
         if not processed_data_dir.exists():
@@ -3343,14 +3343,14 @@ class FlowMol(pl.LightningModule):
                 print(f'WARNING: no loss weight specified for feature {feat}, using default of 1.0')
 
         self.exp_dist = Exponential(1.0)
-        
+
         # construct histogram of number of atoms in each ligand
         self.build_n_atoms_dist(n_atoms_hist_file=self.n_atoms_hist_file)
 
         # create interpolant scheduler and vector field
-        self.interpolant_scheduler = InterpolantScheduler(canonical_feat_order=self.canonical_feat_order, 
+        self.interpolant_scheduler = InterpolantScheduler(canonical_feat_order=self.canonical_feat_order,
                                                           **interpolant_scheduler_config)
-        
+
         # check that a valid parameterization was specified
         if self.parameterization not in ['endpoint', 'vector-field', 'dirichlet', 'ctmc']:
             raise ValueError(f'parameterization must be one of "endpoint", "vector-field", or "dirichlet", "ctmc", got {self.parameterization}')
@@ -3367,8 +3367,8 @@ class FlowMol(pl.LightningModule):
         if self.parameterization == 'ctmc':
             self.vector_field = vector_field_class(n_atom_types=self.n_atom_types,
                                             canonical_feat_order=self.canonical_feat_order,
-                                            interpolant_scheduler=self.interpolant_scheduler, 
-                                            n_charges=n_atom_charges, 
+                                            interpolant_scheduler=self.interpolant_scheduler,
+                                            n_charges=n_atom_charges,
                                             n_bond_types=n_bond_types,
                                             exclude_charges=self.exclude_charges,
                                             property_embedding_dim=property_embedding_dim,
@@ -3380,8 +3380,8 @@ class FlowMol(pl.LightningModule):
         else:
             self.vector_field = vector_field_class(n_atom_types=self.n_atom_types,
                                             canonical_feat_order=self.canonical_feat_order,
-                                            interpolant_scheduler=self.interpolant_scheduler, 
-                                            n_charges=n_atom_charges, 
+                                            interpolant_scheduler=self.interpolant_scheduler,
+                                            n_charges=n_atom_charges,
                                             n_bond_types=n_bond_types,
                                             exclude_charges=self.exclude_charges,
                                             **vector_field_config)
@@ -3418,7 +3418,7 @@ class FlowMol(pl.LightningModule):
 
         if self.prior_config['c']['type'] == 'marginal':
             self.prior_config['c']['kwargs']['p'] = p_c
-        
+
         if self.prior_config['c']['type'] == 'c-given-a':
             self.prior_config['c']['kwargs']['p_c_given_a'] = p_c_given_a
 
@@ -3431,8 +3431,8 @@ class FlowMol(pl.LightningModule):
             for feat in ['a', 'c', 'e']:
                 if self.prior_config[feat]['type'] != 'ctmc':
                     raise ValueError('ctmc parameterization requires that all categorical priors be ctmc')
-                
-    def configure_loss_fns(self, device):    
+
+    def configure_loss_fns(self, device):
         # instantiate loss functions
         if self.time_scaled_loss:
             reduction = 'none'
@@ -3486,6 +3486,8 @@ class FlowMol(pl.LightningModule):
             total = total + self.total_loss_weights[feat] * losses[feat]
         if 'valence' in losses:
             total = total + self.valence_loss_weight * losses['valence']
+        if 'condition_margin' in losses:
+            total = total + self.condition_margin_weight * losses['condition_margin']
         return total
 
     def _expected_valence_loss(
@@ -3861,7 +3863,7 @@ class FlowMol(pl.LightningModule):
         return total_loss
 
     def forward(self, g: dgl.DGLGraph):
-        
+
         batch_size = g.batch_size
         device = g.device
 
@@ -3895,7 +3897,7 @@ class FlowMol(pl.LightningModule):
 
         # Get property embeddings if available
         if hasattr(g, 'prop') and self.conditional_generation:
-            self.property_embedder = self.property_embedder.to(device) 
+            self.property_embedder = self.property_embedder.to(device)
             g.prop = g.prop.unsqueeze(-1)
             g.prop = g.prop.to(device)
             prop_emb = self.property_embedder(g.prop)
@@ -3961,7 +3963,7 @@ class FlowMol(pl.LightningModule):
         # get the time-dependent loss weights if necessary
         if self.time_scaled_loss:
             time_weights = self.interpolant_scheduler.loss_weights(t)
-            
+
         # compute losses
         losses = {}
         for feat_idx, feat in enumerate(self.canonical_feat_order):
@@ -3989,7 +3991,7 @@ class FlowMol(pl.LightningModule):
             )
 
         return losses
-    
+
     def sample_prior(self, g, node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor):
         """Sample from the prior distribution of the ligand."""
         # sample atom positions from prior
@@ -3998,7 +4000,7 @@ class FlowMol(pl.LightningModule):
         num_nodes = g.num_nodes()
         device = g.device
 
-        
+
         # sample the prior for node features
         for feat in self.node_feats:
             prior_type = self.prior_config[feat]['type']
@@ -4018,7 +4020,7 @@ class FlowMol(pl.LightningModule):
 
         # sample the prior for edge features
         g.edata['e_0'] = edge_prior(upper_edge_mask, self.prior_config['e']).to(device)
-            
+
         return g
 
     def configure_optimizers(self):
@@ -4046,15 +4048,15 @@ class FlowMol(pl.LightningModule):
         return self.n_atoms_map[n_atoms]
 
     def sample_random_sizes(self, n_molecules: int, device="cuda:0",
-        stochasticity=None, high_confidence_threshold=None, 
+        stochasticity=None, high_confidence_threshold=None,
         xt_traj=False, ep_traj=False,
         normalization_file_path:str=None, conditional_generation:bool=True,
         property_name:str=None, # properties name is for finding normalizing vector for the property
-        properties_for_sampling:int|float=None, 
-        training_mode:bool=True,   
+        properties_for_sampling:int|float=None,
+        training_mode:bool=True,
         properties_handle_method:str=None, # choices ['concatenate', 'sum', 'multiply', 'concatenate_sum', 'concatenate_multiply']
-        multilple_values_to_one_property: List[float|int] | None = None,     
-        number_of_atoms: List[int]|None = None, 
+        multilple_values_to_one_property: List[float|int] | None = None,
+        number_of_atoms: List[int]|None = None,
         **kwargs):
         """Sample molecules with sizes drawn from the training distribution."""
 
@@ -4064,7 +4066,7 @@ class FlowMol(pl.LightningModule):
             guide_w = dict(guide_w)
         if multilple_values_to_one_property is not None and properties_for_sampling is not None:
             raise ValueError('You can not provide both multilple_values_to_one_property and properties_for_sampling, only one of them should be provided')
-        
+
         # get the number of atoms that will be in each molecules
         if number_of_atoms:
             atoms_per_molecule = torch.tensor(number_of_atoms).to(device)
@@ -4075,33 +4077,33 @@ class FlowMol(pl.LightningModule):
             assert len(atoms_per_molecule) == len(multilple_values_to_one_property), \
                 f"{len(atoms_per_molecule)} != {len(multilple_values_to_one_property)}"
 
-        return self.sample(atoms_per_molecule, 
-            device=device,  
-            stochasticity=stochasticity, 
+        return self.sample(atoms_per_molecule,
+            device=device,
+            stochasticity=stochasticity,
             high_confidence_threshold=high_confidence_threshold,
             xt_traj=xt_traj,
             ep_traj=ep_traj,
             normalization_file_path=normalization_file_path,
             conditional_generation=conditional_generation,
-            property_name=property_name, # just for sampling process with normalizing 
+            property_name=property_name, # just for sampling process with normalizing
             properties_for_sampling=properties_for_sampling,
             training_mode=training_mode,
             properties_handle_method=properties_handle_method,
             multilple_values_to_one_property=multilple_values_to_one_property,
             **kwargs)
-    
+
 
     @torch.no_grad()
     def sample(self, n_atoms: torch.Tensor, n_timesteps: int = None, device="cuda:0",
         stochasticity=None, high_confidence_threshold=None, xt_traj=False, ep_traj=False,
         normalization_file_path:str=None, conditional_generation:bool=True,
-        property_name:str=None, properties_for_sampling:int|float=None, 
-        training_mode:bool=True,   
+        property_name:str=None, properties_for_sampling:int|float=None,
+        training_mode:bool=True,
         properties_handle_method:str='concatenate_sum', # choices ['concatenate', 'sum', 'multiply', 'concatenate_sum', 'concatenate_multiply']
-        multilple_values_to_one_property: List[float|int] | None = None, 
+        multilple_values_to_one_property: List[float|int] | None = None,
          **kwargs):
         """Sample molecules with the given number of atoms.
-        
+
         Args:
             n_atoms (torch.Tensor): Tensor of shape (batch_size,) containing the number of atoms in each molecule.
         """
@@ -4130,7 +4132,7 @@ class FlowMol(pl.LightningModule):
             edge_idxs = edge_idxs_dict[int(n_atoms_i)]
             g_i = dgl.graph((edge_idxs[0], edge_idxs[1]), num_nodes=n_atoms_i, device=device)
             g.append(g_i)
-            
+
 
         # batch the graphs
         g = dgl.batch(g)
@@ -4184,8 +4186,8 @@ class FlowMol(pl.LightningModule):
             if visualize:
                 args.append(traj_frames[mol_idx])
 
-            molecules.append(SampledMolecule(*args, 
-                ctmc_mol=ctmc_mol, 
+            molecules.append(SampledMolecule(*args,
+                ctmc_mol=ctmc_mol,
                 build_xt_traj=xt_traj,
                 build_ep_traj=ep_traj,
                 exclude_charges=self.exclude_charges))
@@ -4204,7 +4206,7 @@ class ZerosEmbedding(nn.Module):
     def __init__(self, hidden_dim: int=256):
         super().__init__()
         self.hidden_dim = hidden_dim
-    
+
     def forward(self, x: torch.Tensor|int, device='cuda') -> torch.Tensor:
         if isinstance(x, int):
             return torch.zeros(x, self.hidden_dim, device=device)
@@ -4214,7 +4216,7 @@ class SetEmbeddingType:
     """
     Controls whether to use conditional or unconditional embeddings for each
     batch element during training.
-    
+
     Similar to mattergen's SetEmbeddingType, this class creates a mask where
     True indicates using the unconditional embedding and False indicates using
     the conditional embedding.
@@ -4225,64 +4227,78 @@ class SetEmbeddingType:
             p_unconditional: Probability of using unconditional embedding during training
         """
         self.p_unconditional = p_unconditional
-    
+
     def __call__(self, g: dgl.DGLGraph) -> dgl.DGLGraph:
         """
         Creates and sets the unconditional embedding mask for the graph.
-        
+
         Args:
             g: DGL graph with property information
-            
+
         Returns:
             DGL graph with _USE_UNCONDITIONAL_EMBEDDING attribute
         """
         # Only proceed if the graph has property information
         if not hasattr(g, 'prop') or g.prop is None:
             return g
-        
+
         batch_size = g.batch_size
         device = g.device
-        
+
         # Generate random mask where True = use unconditional embedding
         # Shape: [batch_size, 1]
         mask = torch.rand(batch_size, 1, device=device) <= self.p_unconditional
-        
+
         # Add the mask to the graph
         g._USE_UNCONDITIONAL_EMBEDDING = mask
-        
-        return g       
+
+        return g
 
 class ClassifierFreeGuidance(FlowMol):
     """
     Extended FlowMol model with Classifier-Free Guidance capabilities.
-    
+
     During training, each batch element randomly uses either conditional
     or unconditional embeddings based on a probability mask.
-    
+
     During sampling, combines conditional and unconditional predictions
     with a guidance scale to control the influence of the conditioning.
     """
-    
+
     def __init__(self, *args,
                  p_uncond: float = 0.2,  # Probability of training with unconditional embedding
+                 condition_margin: float = 0.0,
+                 condition_margin_weight: float = 0.0,
                  **kwargs):
         if not 0.0 <= float(p_uncond) <= 1.0:
             raise ValueError(f"p_uncond must be in [0, 1], got {p_uncond}")
+        if float(condition_margin) < 0.0:
+            raise ValueError("condition_margin must be non-negative")
+        if float(condition_margin_weight) < 0.0:
+            raise ValueError("condition_margin_weight must be non-negative")
+        if float(condition_margin_weight) > 0.0 and float(p_uncond) != 0.0:
+            raise ValueError("condition margin training requires p_uncond=0")
         super().__init__(*args, **kwargs)
         self.p_uncond = float(p_uncond)
-        self.save_hyperparameters({"p_uncond": self.p_uncond})
+        self.condition_margin = float(condition_margin)
+        self.condition_margin_weight = float(condition_margin_weight)
+        self.save_hyperparameters({
+            "p_uncond": self.p_uncond,
+            "condition_margin": self.condition_margin,
+            "condition_margin_weight": self.condition_margin_weight,
+        })
 
         # Create SetEmbeddingType controller
         self.embedding_controller = SetEmbeddingType(p_unconditional=self.p_uncond)
 
-        vector_field_config = kwargs.get("vector_field_config", {}) 
+        vector_field_config = kwargs.get("vector_field_config", {})
 
         # Create unconditional embedder (zero embedding)
         self.unconditional_embedder = ZerosEmbedding(hidden_dim=self.property_embedding_dim)
         self.vector_field = CFGVectorField(n_atom_types=self.n_atom_types,
                                             canonical_feat_order=self.canonical_feat_order,
-                                            interpolant_scheduler=self.interpolant_scheduler, 
-                                            n_charges=self.n_atom_charges, 
+                                            interpolant_scheduler=self.interpolant_scheduler,
+                                            n_charges=self.n_atom_charges,
                                             n_bond_types=self.n_bond_types,
                                             exclude_charges=self.exclude_charges,
                                             property_embedding_dim=self.property_embedding_dim,
@@ -4292,14 +4308,45 @@ class ClassifierFreeGuidance(FlowMol):
                                             dataset_name=self.dataset_name,
                                             **vector_field_config)
     def compute_batch_losses(self, g: dgl.DGLGraph, stage: str) -> Dict[str, torch.Tensor]:
-        # Training uses classifier-free dropout. Validation is always fully
-        # conditional so val_cond_total_loss measures the target-conditioned model.
+        # Margin training is fully conditional; p_uncond == 0 is enforced.
         mode = 'mixed' if stage == 'train' else 'conditional'
-        return self(
-            g,
+        cpu_rng_state = torch.random.get_rng_state()
+        cuda_rng_state = None
+        if g.device.type == 'cuda':
+            cuda_rng_state = torch.cuda.get_rng_state(g.device)
+
+        losses = self(
+            self._local_graph_copy(g),
             condition_mode=mode,
             collect_intuitive_metrics=(stage == 'val' and self.log_intuitive_metrics),
         )
+        if (
+            stage == 'train'
+            and self.condition_margin_weight > 0.0
+            and g.batch_size > 1
+        ):
+            # Reuse the same time and corruption; only the property changes.
+            torch.random.set_rng_state(cpu_rng_state)
+            if cuda_rng_state is not None:
+                torch.cuda.set_rng_state(cuda_rng_state, g.device)
+            shuffled_losses = self.compute_shuffled_condition_losses(g)
+            if shuffled_losses is not None:
+                correct_total = self._combine_feature_losses(losses)
+                shuffled_total = self._combine_feature_losses(shuffled_losses)
+                losses['condition_margin'] = self.condition_margin_loss(
+                    correct_total, shuffled_total, self.condition_margin
+                )
+        return losses
+
+
+
+    def condition_margin_loss(
+        correct_loss: torch.Tensor,
+        shuffled_loss: torch.Tensor,
+        margin: float,
+    ) -> torch.Tensor:
+        """Require the correct condition to beat a mismatched condition."""
+        return F.relu(correct_loss - shuffled_loss + float(margin))
 
     def compute_shuffled_condition_losses(
         self,
@@ -4329,13 +4376,13 @@ class ClassifierFreeGuidance(FlowMol):
         """
         if condition_mode not in {'mixed', 'conditional', 'unconditional'}:
             raise ValueError(f'Unknown condition_mode: {condition_mode!r}')
-    
+
         batch_size = g.batch_size
         device = g.device
-        
+
         # Check if the attribute loss_fn_dict exists
         if not hasattr(self, 'loss_fn_dict'):
-            self.configure_loss_fns(device=g.device)    
+            self.configure_loss_fns(device=g.device)
 
         # Get batch indices of every atom and edge
         node_batch_idx, edge_batch_idx = get_batch_idxs(g)
@@ -4417,7 +4464,7 @@ class ClassifierFreeGuidance(FlowMol):
         # get the time-dependent loss weights if necessary
         if self.time_scaled_loss:
             time_weights = self.interpolant_scheduler.loss_weights(t)
-            
+
         # compute losses
         losses = {}
         for feat_idx, feat in enumerate(self.canonical_feat_order):
@@ -4461,22 +4508,22 @@ class ClassifierFreeGuidance(FlowMol):
                 )
             )
 
-        return losses        
+        return losses
 
     @torch.no_grad()
     def sample(self, n_atoms: torch.Tensor, n_timesteps: int = None, device="cuda:0",
         stochasticity=None, high_confidence_threshold=None, xt_traj=False, ep_traj=False,
         normalization_file_path:str=None, conditional_generation:bool=True,
-        property_name:str=None, properties_for_sampling:int|float=None, 
-        training_mode:bool=True,   
-        properties_handle_method:str='concatenate_sum', 
-        multilple_values_to_one_property: List[float|int] | None = None, 
+        property_name:str=None, properties_for_sampling:int|float=None,
+        training_mode:bool=True,
+        properties_handle_method:str='concatenate_sum',
+        multilple_values_to_one_property: List[float|int] | None = None,
         guide_w: Dict[str, float] | None = None,
         dfm_type='campbell',
         guidance_format: str = "linear",  # 'linear' or 'log'
         where_to_apply_guide: str = "probabilities",  # 'probabilities' or 'rate_matrix',
         dataset_name: str = "qm9",
-         **kwargs):   
+         **kwargs):
         """
         Sample molecules with classifier-free guidance.
         """
@@ -4490,7 +4537,7 @@ class ClassifierFreeGuidance(FlowMol):
         if xt_traj or ep_traj:
             visualize = True
         else:
-            visualize = False    
+            visualize = False
 
         # Create a batched graph
         edge_idxs_dict = {}
@@ -4505,10 +4552,10 @@ class ClassifierFreeGuidance(FlowMol):
 
         g = dgl.batch(g)
         upper_edge_mask = get_upper_edge_mask(g)
-        node_batch_idx, edge_batch_idx = get_batch_idxs(g)            
+        node_batch_idx, edge_batch_idx = get_batch_idxs(g)
 
         # Sample molecules from prior
-        g = self.sample_prior(g, node_batch_idx, upper_edge_mask)   
+        g = self.sample_prior(g, node_batch_idx, upper_edge_mask)
 
         # Setup integration arguments
         integrate_kwargs = {
@@ -4525,7 +4572,7 @@ class ClassifierFreeGuidance(FlowMol):
             'multilple_values_to_one_property': multilple_values_to_one_property,
             'dataset_name': dataset_name
         }
-        
+
         if self.parameterization == 'ctmc':
             integrate_kwargs['stochasticity'] = stochasticity
             integrate_kwargs['high_confidence_threshold'] = high_confidence_threshold
@@ -4562,20 +4609,20 @@ class ClassifierFreeGuidance(FlowMol):
                 build_ep_traj=ep_traj,
                 exclude_charges=self.exclude_charges))
 
-        return molecules    
+        return molecules
 
     def sample_random_sizes(self, n_molecules: int, device="cuda:0",
-        stochasticity=None, high_confidence_threshold=None, 
+        stochasticity=None, high_confidence_threshold=None,
         xt_traj=False, ep_traj=False,
         normalization_file_path:str=None, conditional_generation:bool=True,
-        property_name:str=None, properties_for_sampling:int|float=None, 
-        training_mode:bool=True,   
-        properties_handle_method:str=None, 
-        multilple_values_to_one_property: List[float|int] | None = None,  
-        number_of_atoms: List[int]|None = None, 
+        property_name:str=None, properties_for_sampling:int|float=None,
+        training_mode:bool=True,
+        properties_handle_method:str=None,
+        multilple_values_to_one_property: List[float|int] | None = None,
+        number_of_atoms: List[int]|None = None,
         guide_w: Dict[str, float] | None = None,
-        dfm_type='campbell',  
-        guidance_format: str = "linear", 
+        dfm_type='campbell',
+        guidance_format: str = "linear",
         where_to_apply_guide: str = "probabilities",
         dataset_name: str = "qm9",
         **kwargs):
@@ -4598,15 +4645,15 @@ class ClassifierFreeGuidance(FlowMol):
             assert len(atoms_per_molecule) == len(multilple_values_to_one_property), \
                 f"{len(atoms_per_molecule)} != {len(multilple_values_to_one_property)}"
 
-        return self.sample(atoms_per_molecule, 
-            device=device,  
-            stochasticity=stochasticity, 
+        return self.sample(atoms_per_molecule,
+            device=device,
+            stochasticity=stochasticity,
             high_confidence_threshold=high_confidence_threshold,
             xt_traj=xt_traj,
             ep_traj=ep_traj,
             normalization_file_path=normalization_file_path,
             conditional_generation=conditional_generation,
-            property_name=property_name, # just for sampling process with normalizing 
+            property_name=property_name, # just for sampling process with normalizing
             properties_for_sampling=properties_for_sampling,
             training_mode=training_mode,
             properties_handle_method=properties_handle_method,
@@ -4624,12 +4671,12 @@ class CFGVectorField(CTMCVectorField):
         super().__init__(*args, **kwargs)
         self.unconditional_embedder = ZerosEmbedding(hidden_dim=self.property_embedding_dim)
 
-    def integrate_with_CFG_guidance(self, g: dgl.DGLGraph, node_batch_idx: torch.Tensor, 
-            upper_edge_mask: torch.Tensor, n_timesteps: int, 
+    def integrate_with_CFG_guidance(self, g: dgl.DGLGraph, node_batch_idx: torch.Tensor,
+            upper_edge_mask: torch.Tensor, n_timesteps: int,
             guide_w: Dict[str, float] | None = None,
             visualize=False,
             dfm_type='campbell',
-            stochasticity=8.0, 
+            stochasticity=8.0,
             high_confidence_threshold=0,
             cat_temp_func=None,
             forward_weight_func=None,
@@ -4672,7 +4719,7 @@ class CFGVectorField(CTMCVectorField):
         if cat_temp_func is None:
             cat_temp_func = self.cat_temp_func
         if forward_weight_func is None:
-            forward_weight_func = self.forward_weight_func        
+            forward_weight_func = self.forward_weight_func
 
         # get edge_batch_idx
         edge_batch_idx = get_edge_batch_idxs(g)
@@ -4681,7 +4728,7 @@ class CFGVectorField(CTMCVectorField):
         if tspan is None:
             t = torch.linspace(0, 1, n_timesteps, device=g.device)
         else:
-            t = tspan             
+            t = tspan
 
         # Get alpha values
         alpha_t = self.interpolant_scheduler.alpha_t(t)
@@ -4719,7 +4766,7 @@ class CFGVectorField(CTMCVectorField):
             dt = s_i - t_i
             last_step = (s_idx == t.shape[0] - 1)
 
-            g = self.step_with_CFG_guidance(g, s_i, t_i, 
+            g = self.step_with_CFG_guidance(g, s_i, t_i,
                                         alpha_t[s_idx - 1], alpha_t[s_idx], alpha_t_prime[s_idx - 1],
                                         node_batch_idx, edge_batch_idx, upper_edge_mask,
                                         guide_w=guide_w,
@@ -4738,7 +4785,7 @@ class CFGVectorField(CTMCVectorField):
                                         multilple_values_to_one_property=multilple_values_to_one_property,
                                         guidance_format=guidance_format,
                                         where_to_apply_guide=where_to_apply_guide,
-                                        **kwargs)            
+                                        **kwargs)
 
             if visualize:
                 for feat in self.canonical_feat_order:
@@ -4781,7 +4828,7 @@ class CFGVectorField(CTMCVectorField):
 
             return g, reshaped_traj_frames
 
-        return g    
+        return g
 
     def step_with_CFG_guidance(self, g, s_i, t_i, alpha_t_i, alpha_s_i, alpha_t_prime_i,
                         node_batch_idx, edge_batch_idx, upper_edge_mask,
@@ -4815,8 +4862,8 @@ class CFGVectorField(CTMCVectorField):
                     node_batch_idx=node_batch_idx,
                     upper_edge_mask=upper_edge_mask,
                     apply_softmax=False, # will do softmax later
-                    remove_com=True) 
-        
+                    remove_com=True)
+
         # the forward function in CTMCVectorField class of ctmc_vector_field.py will take care of conditional embeddings,
         # it match case 2 of forward function adn will handle the conditional embeddings with the time t_i
         cond_pred = self(g, t=torch.full((g.batch_size,), t_i, device=g.device),
@@ -4832,19 +4879,19 @@ class CFGVectorField(CTMCVectorField):
         x_1_uncond = uncond_pred['x']
         x_t = g.ndata['x_t']
         guide_w_pos = guide_w['x']
-        
+
         vf_cond = self.vector_field(x_t, x_1_cond, alpha_t_i[0], alpha_t_prime_i[0])
         vf_uncond = self.vector_field(x_t, x_1_uncond, alpha_t_i[0], alpha_t_prime_i[0])
         vf = (1 - guide_w_pos) * vf_uncond + guide_w_pos * vf_cond
-        
+
         g.ndata['x_t'] = x_t + dt * vf
         g.ndata['x_1_pred'] = ((1 - guide_w_pos) * x_1_uncond + guide_w_pos * x_1_cond).detach().clone()
-       
+
         # Handle categorical features
         for feat_idx, feat in enumerate(self.canonical_feat_order):
             if feat == 'x':
                 continue
-            
+
             guide_weight = guide_w[feat] # Here 'feat' will be 'a', 'c', or 'e'
 
             if feat == 'e':
@@ -4972,14 +5019,14 @@ class CFGVectorField(CTMCVectorField):
                 'Choose "linear" or "log".'
             )
         return F.softmax(guided_logits / temperature_tensor, dim=-1)
-    
-    @staticmethod 
+
+    @staticmethod
     def campbell_step_with_rate_matrix_cfg(p_1_given_t_uncond: torch.Tensor,
-                                        p_1_given_t_cond: torch.Tensor, 
+                                        p_1_given_t_cond: torch.Tensor,
                                         xt: torch.Tensor,
-                                        stochasticity: float, 
-                                        alpha_t: float, 
-                                        alpha_t_prime: float, 
+                                        stochasticity: float,
+                                        alpha_t: float,
+                                        alpha_t_prime: float,
                                         dt: float,
                                         guide_weight: float,
                                         mask_index: int,
@@ -4991,7 +5038,7 @@ class CFGVectorField(CTMCVectorField):
                                         guidance_format: str = "linear",
                                         where_to_apply_guide: str = "probabilities",
                                         temperature: float = 1.0
-                                        ): 
+                                        ):
         """
         Modified campbell_step that applies CFG to rate matrices (paper's approach)
         Args:
@@ -5011,22 +5058,22 @@ class CFGVectorField(CTMCVectorField):
 
         if where_to_apply_guide == "rate_matrix":
             # Step 1: Compute separate rate matrices for unconditional and conditional
-            R_t_uncond = CFGVectorField._compute_rate_matrix(p_1_given_t_uncond, xt, alpha_t, alpha_t_prime, 
+            R_t_uncond = CFGVectorField._compute_rate_matrix(p_1_given_t_uncond, xt, alpha_t, alpha_t_prime,
                                                 stochasticity, mask_index, n_classes)
             R_t_cond = CFGVectorField._compute_rate_matrix(p_1_given_t_cond, xt, alpha_t, alpha_t_prime,
                                                 stochasticity, mask_index, n_classes)
 
-            if guidance_format == "log":      
+            if guidance_format == "log":
                 # Step 2: Combine rate matrices with guidance
                 R_t_guided = torch.exp(
-                    (1 - guide_weight) * torch.log(R_t_uncond + eps) + 
+                    (1 - guide_weight) * torch.log(R_t_uncond + eps) +
                     guide_weight * torch.log(R_t_cond + eps)
                 )
             elif guidance_format == "linear":
                 R_t_guided = (1 - guide_weight) * R_t_uncond + guide_weight * R_t_cond
             else:
                 raise ValueError(f"Invalid guidance_format: {guidance_format}. Choose 'linear' or 'log'.")
-        
+
             # Extrapolative CFG weights can make a linear rate combination
             # negative. Off-diagonal CTMC rates must remain non-negative.
             R_t_guided = R_t_guided.clamp_min(0.0)
@@ -5053,8 +5100,8 @@ class CFGVectorField(CTMCVectorField):
         # Ensure probability conservation
         step_probs.scatter_(-1, xt.unsqueeze(-1), 0.0)
         stay_probs = (1.0 - step_probs.sum(dim=-1, keepdim=True)).clamp(min=0.0)
-        step_probs.scatter_(-1, xt.unsqueeze(-1), stay_probs)   
-        step_probs = torch.clamp(step_probs, min=0.0, max=1.0)     
+        step_probs.scatter_(-1, xt.unsqueeze(-1), stay_probs)
+        step_probs = torch.clamp(step_probs, min=0.0, max=1.0)
 
         # Step 5: Handle last step
         if last_step:
@@ -5062,7 +5109,7 @@ class CFGVectorField(CTMCVectorField):
             guided_logits_full = torch.zeros(uncond_val.shape[0], n_classes, device=device)
             guided_logits_full[:, :uncond_val.shape[-1]] = (1 - guide_weight) * uncond_val + guide_weight * cond_val
             guided_logits_full[:, mask_index] = -1e9 # Never choose mask in final step
-            
+
             is_masked = (xt == mask_index)
             xt_new = xt.clone()
             xt_new[is_masked] = guided_logits_full[is_masked].argmax(-1)
@@ -5070,10 +5117,10 @@ class CFGVectorField(CTMCVectorField):
             xt_new = Categorical(step_probs).sample()
 
         LARGE_NEG = -1e9
-        
+
         log_p_uncond_full = torch.full((p_1_given_t_uncond.shape[0], n_classes), LARGE_NEG, device=device)
         log_p_cond_full = torch.full((p_1_given_t_cond.shape[0], n_classes), LARGE_NEG, device=device)
-        
+
         log_p_uncond_full[:, :p_1_given_t_uncond.shape[-1]] = torch.log(p_1_given_t_uncond + eps)
         log_p_cond_full[:, :p_1_given_t_cond.shape[-1]] = torch.log(p_1_given_t_cond + eps)
 
@@ -5085,12 +5132,12 @@ class CFGVectorField(CTMCVectorField):
             print(f"guide_weight: {guide_weight}")
             print(f"log_p_uncond_full stats: min={log_p_uncond_full.min()}, max={log_p_uncond_full.max()}, has_nan={torch.isnan(log_p_uncond_full).any()}")
             print(f"log_p_cond_full stats: min={log_p_cond_full.min()}, max={log_p_cond_full.max()}, has_nan={torch.isnan(log_p_cond_full).any()}")
-        
-        x1 = Categorical(F.softmax(log_p_guided, dim=-1)).sample() 
+
+        x1 = Categorical(F.softmax(log_p_guided, dim=-1)).sample()
 
         xt_new = F.one_hot(xt_new, num_classes=n_classes).float()
         x1 = F.one_hot(x1, num_classes=n_classes).float()
-        
+
         return xt_new, x1
 
     @staticmethod # adapted from https://github.com/hnisonoff/discrete_guidance/blob/main/src/fm_utils.py
@@ -5103,25 +5150,25 @@ class CFGVectorField(CTMCVectorField):
         device = p_1_given_t.device
         N = xt.shape[0] # N.shape = B * D, where B is batch size and D is number of nodes/edges
         S_actual = p_1_given_t.shape[-1]  # Number of actual classes (S)
-        
+
         # Create full rate matrix for all S+1 classes
         R_t = torch.zeros(N, n_classes, device=device)  # Shape: [N, S+1]
 
         # Masks for current state
         is_masked = (xt == mask_index).float().unsqueeze(-1)  # [N, 1]
         is_unmasked = 1 - is_masked
-        
+
         # Unmasking rates: from mask to any non-mask state
         # Rate = p(x1=j|xt) * (alpha_t_prime + stochasticity*alpha_t) / (1 - alpha_t)
         unmasking_factor = (alpha_t_prime + stochasticity * alpha_t) / (1 - alpha_t + 1e-8)
 
         # Only fill the actual class positions (0 to S-1), leave mask position (S) as 0
         R_t[:, :S_actual] = is_masked * p_1_given_t * unmasking_factor
-        
+
         # Remasking rates: from actual classes to mask token
         # For nodes that are currently unmasked, add rate to transition to mask
         R_t[:, mask_index] = is_unmasked.squeeze(-1) * stochasticity
-        
+
         return R_t
 
 # ========================================================================================
@@ -5214,6 +5261,8 @@ def model_from_config(config: dict, seed_ckpt: str | Path | None = None) -> Clas
         'charge_offset': dataset.get('charge_offset', 2),
         'log_intuitive_metrics': validation_cfg.get('log_intuitive_metrics', True),
         'p_uncond': guidance.get('p_uncond', 0.2),
+        'condition_margin': guidance.get('condition_margin', 0.0),
+        'condition_margin_weight': guidance.get('condition_margin_weight', 0.0),
         **config.get('mol_fm', {}),
     }
 

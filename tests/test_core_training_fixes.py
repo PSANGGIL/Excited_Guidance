@@ -8,6 +8,7 @@ from torch.nn import functional as F
 
 from model import (
     CFGVectorField,
+    ClassifierFreeGuidance,
     EndpointVectorField,
     FlowMol,
     InterpolantScheduler,
@@ -112,6 +113,23 @@ class UpdaterExecutionTests(unittest.TestCase):
 
 
 class CFGProbabilityTests(unittest.TestCase):
+    def test_condition_margin_penalizes_insufficient_condition_gain(self):
+        correct = torch.tensor(1.0, requires_grad=True)
+        shuffled = torch.tensor(1.02, requires_grad=True)
+        loss = ClassifierFreeGuidance.condition_margin_loss(
+            correct, shuffled, margin=0.05
+        )
+        self.assertAlmostEqual(float(loss), 0.03, places=6)
+        loss.backward()
+        self.assertEqual(float(correct.grad), 1.0)
+        self.assertEqual(float(shuffled.grad), -1.0)
+
+    def test_condition_margin_is_zero_after_required_gain(self):
+        loss = ClassifierFreeGuidance.condition_margin_loss(
+            torch.tensor(1.0), torch.tensor(1.1), margin=0.05
+        )
+        self.assertEqual(float(loss), 0.0)
+
     def test_weight_one_recovers_conditional_distribution(self):
         uncond = torch.tensor([[1000.0, -1000.0, -1200.0]])
         cond = torch.tensor([[-900.0, 900.0, -1100.0]])
