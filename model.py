@@ -2385,6 +2385,32 @@ PROPERTY_MAP = {
         'h298_atom': 17, 'g298_atom': 18
     }
 
+class EquivariantConditionFiLM(nn.Module):
+    """Property modulation preserving the transformation type of GVP features."""
+
+    def __init__(self, property_dim: int, scalar_dim: int, vector_dim: int):
+        super().__init__()
+        hidden_dim = max(property_dim, scalar_dim)
+        self.scalar_dim = scalar_dim
+        self.vector_dim = vector_dim
+        self.modulation = nn.Sequential(
+            nn.Linear(property_dim, hidden_dim), nn.SiLU(),
+            nn.Linear(hidden_dim, 2 * scalar_dim + vector_dim),
+        )
+        nn.init.zeros_(self.modulation[-1].weight)
+        nn.init.zeros_(self.modulation[-1].bias)
+
+    def forward(self, scalars, vectors, property_embedding, node_batch_idx):
+        modulation = self.modulation(property_embedding)[node_batch_idx]
+        scalar_scale, scalar_shift, vector_scale = torch.split(
+            modulation, [self.scalar_dim, self.scalar_dim, self.vector_dim], dim=-1
+        )
+        scalars = scalars * (1.0 + scalar_scale) + scalar_shift
+        # Invariant channel scaling commutes with rotation; vector shifts do not.
+        vectors = vectors * (1.0 + vector_scale.unsqueeze(-1))
+        return scalars, vectors
+
+
 class CTMCVectorField(EndpointVectorField):
 
     # uses Continuous-Time Markov Chain (CTMC) to model the flow of cateogrical features (atom type, charge, bond order)
@@ -2409,6 +2435,7 @@ class CTMCVectorField(EndpointVectorField):
                  conditional_generation:bool=True,
                  property_embedder=None,
                  properties_handle_method:str=None,
+                 condition_film_enabled: bool = False,
                  dataset_name:str = "qm9",
                  **kwargs):
         super().__init__(*args, has_mask=True, **kwargs) # initialize endpoint vector field
@@ -2417,6 +2444,14 @@ class CTMCVectorField(EndpointVectorField):
         self.conditional_generation = conditional_generation
         self.property_embedder = property_embedder
         self.properties_handle_method = properties_handle_method
+        self.condition_film_enabled = bool(condition_film_enabled)
+        if self.condition_film_enabled:
+            self.condition_film_layers = nn.ModuleList([
+                EquivariantConditionFiLM(property_embedding_dim, self.n_hidden_scalars, self.n_vec_channels)
+                for _ in self.conv_layers
+            ])
+        else:
+            self.condition_film_layers = nn.ModuleList()
         # Normalization metadata are immutable during a sampling run. Cache the
         # loaded PT payload instead of reading it once per integration timestep.
         self._normalization_cache_path = None
@@ -3004,7 +3039,7 @@ class CTMCVectorField(EndpointVectorField):
 
                     # Case 1: Property info in t (for training)
                     if len(t.shape) > 1:
-                        prop_emb = t[:, 1:][node_batch_idx]
+                        prop_emb = t[:, 1:]
 
                     # Case 2: Explicit sampling properties (for sampling)
                     elif self.properties_for_sampling is not None or self.multilple_values_to_one_property is not None:
@@ -3070,11 +3105,11 @@ class CTMCVectorField(EndpointVectorField):
                         # Get embedding
                         prop_emb = self.property_embedder(properties_batch)
 
-                        # Repeat for each node in graph
-                        prop_emb = prop_emb[node_batch_idx]
-
                     if prop_emb is None:
                         raise ValueError("No property information available for conditional generation")
+
+                    prop_emb_batch = prop_emb
+                    prop_emb = prop_emb_batch[node_batch_idx]
 
                     # Handle properties with different methods
                     if self.properties_handle_method == 'concatenate_sum':
@@ -3126,6 +3161,11 @@ class CTMCVectorField(EndpointVectorField):
                             x_diff=x_diff,
                             d=d
                     )
+                    if self.condition_film_enabled:
+                        node_scalar_features, node_vec_features = self.condition_film_layers[conv_idx](
+                            node_scalar_features, node_vec_features,
+                            prop_emb_batch, node_batch_idx,
+                        )
 
                     # every convs_per_update convolutions, update the node positions and edge features
                     updater_idx = self.molecule_updater_index(conv_idx)
@@ -3721,6 +3761,12 @@ class FlowMol(pl.LightningModule):
             batch_size=g.batch_size,
             sync_dist=True,
         )
+        condition_metrics = getattr(self, "_last_condition_training_metrics", None)
+        if condition_metrics:
+            self.log_dict(
+                condition_metrics, on_step=False, on_epoch=True,
+                batch_size=g.batch_size, sync_dist=True,
+            )
         self.log(
             'train_total_loss',
             total_loss,
@@ -4269,6 +4315,7 @@ class ClassifierFreeGuidance(FlowMol):
                  p_uncond: float = 0.2,  # Probability of training with unconditional embedding
                  condition_margin: float = 0.0,
                  condition_margin_weight: float = 0.0,
+                 condition_margin_distance_cap: float = 2.0,
                  **kwargs):
         if not 0.0 <= float(p_uncond) <= 1.0:
             raise ValueError(f"p_uncond must be in [0, 1], got {p_uncond}")
@@ -4276,16 +4323,20 @@ class ClassifierFreeGuidance(FlowMol):
             raise ValueError("condition_margin must be non-negative")
         if float(condition_margin_weight) < 0.0:
             raise ValueError("condition_margin_weight must be non-negative")
+        if float(condition_margin_distance_cap) <= 0.0:
+            raise ValueError("condition_margin_distance_cap must be positive")
         if float(condition_margin_weight) > 0.0 and float(p_uncond) != 0.0:
             raise ValueError("condition margin training requires p_uncond=0")
         super().__init__(*args, **kwargs)
         self.p_uncond = float(p_uncond)
         self.condition_margin = float(condition_margin)
         self.condition_margin_weight = float(condition_margin_weight)
+        self.condition_margin_distance_cap = float(condition_margin_distance_cap)
         self.save_hyperparameters({
             "p_uncond": self.p_uncond,
             "condition_margin": self.condition_margin,
             "condition_margin_weight": self.condition_margin_weight,
+            "condition_margin_distance_cap": self.condition_margin_distance_cap,
         })
 
         # Create SetEmbeddingType controller
@@ -4308,45 +4359,69 @@ class ClassifierFreeGuidance(FlowMol):
                                             dataset_name=self.dataset_name,
                                             **vector_field_config)
     def compute_batch_losses(self, g: dgl.DGLGraph, stage: str) -> Dict[str, torch.Tensor]:
-        # Margin training is fully conditional; p_uncond == 0 is enforced.
-        mode = 'mixed' if stage == 'train' else 'conditional'
+        use_margin = stage == "train" and self.condition_margin_weight > 0.0 and g.batch_size > 1
+        mode = "conditional" if use_margin or stage != "train" else "mixed"
         cpu_rng_state = torch.random.get_rng_state()
-        cuda_rng_state = None
-        if g.device.type == 'cuda':
-            cuda_rng_state = torch.cuda.get_rng_state(g.device)
-
-        losses = self(
-            self._local_graph_copy(g),
-            condition_mode=mode,
-            collect_intuitive_metrics=(stage == 'val' and self.log_intuitive_metrics),
+        cuda_rng_state = torch.cuda.get_rng_state(g.device) if g.device.type == "cuda" else None
+        result = self(
+            self._local_graph_copy(g), condition_mode=mode,
+            collect_intuitive_metrics=(stage == "val" and self.log_intuitive_metrics),
+            return_per_molecule_losses=use_margin,
         )
-        if (
-            stage == 'train'
-            and self.condition_margin_weight > 0.0
-            and g.batch_size > 1
-        ):
-            # Reuse the same time and corruption; only the property changes.
-            torch.random.set_rng_state(cpu_rng_state)
-            if cuda_rng_state is not None:
-                torch.cuda.set_rng_state(cuda_rng_state, g.device)
-            shuffled_losses = self.compute_shuffled_condition_losses(g)
-            if shuffled_losses is not None:
-                correct_total = self._combine_feature_losses(losses)
-                shuffled_total = self._combine_feature_losses(shuffled_losses)
-                losses['condition_margin'] = self.condition_margin_loss(
-                    correct_total, shuffled_total, self.condition_margin
-                )
+        if not use_margin:
+            return result
+        losses, correct_per_molecule = result
+        torch.random.set_rng_state(cpu_rng_state)
+        if cuda_rng_state is not None:
+            torch.cuda.set_rng_state(cuda_rng_state, g.device)
+        negative_indices, negative_distance = self.hard_negative_indices(g.prop)
+        negative_graph = self._local_graph_copy(g)
+        negative_graph.prop = g.prop[negative_indices].clone()
+        _, negative_per_molecule = self(
+            negative_graph, condition_mode="conditional",
+            collect_intuitive_metrics=False, return_per_molecule_losses=True,
+        )
+        correct_total = self._combine_per_molecule_losses(correct_per_molecule)
+        negative_total = self._combine_per_molecule_losses(negative_per_molecule)
+        required_margin = self.condition_margin * negative_distance.clamp(max=self.condition_margin_distance_cap)
+        losses["condition_margin"] = self.condition_margin_loss(correct_total, negative_total, required_margin)
+        self._last_condition_training_metrics = {
+            "train_condition_negative_distance": negative_distance.mean().detach(),
+            "train_condition_margin_active_fraction": (correct_total - negative_total + required_margin > 0).float().mean().detach(),
+            "train_condition_loss_gain": (negative_total - correct_total).mean().detach(),
+        }
         return losses
 
+    @staticmethod
+    def condition_margin_loss(correct_loss, shuffled_loss, margin):
+        margin = torch.as_tensor(margin, device=correct_loss.device, dtype=correct_loss.dtype)
+        return F.relu(correct_loss - shuffled_loss + margin).mean()
 
+    @staticmethod
+    def hard_negative_indices(properties: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        values = properties.reshape(properties.shape[0], -1).float()
+        distances = torch.cdist(values, values, p=1)
+        distances.fill_diagonal_(-1.0)
+        indices = distances.argmax(dim=1)
+        return indices, distances.gather(1, indices.unsqueeze(1)).squeeze(1)
 
-    def condition_margin_loss(
-        correct_loss: torch.Tensor,
-        shuffled_loss: torch.Tensor,
-        margin: float,
-    ) -> torch.Tensor:
-        """Require the correct condition to beat a mismatched condition."""
-        return F.relu(correct_loss - shuffled_loss + float(margin))
+    def _combine_per_molecule_losses(self, losses):
+        total = torch.zeros_like(next(iter(losses.values())))
+        for feat in self.canonical_feat_order:
+            total = total + self.total_loss_weights[feat] * losses[feat]
+        return total
+
+    @staticmethod
+    def _mean_per_molecule(values, batch_idx, batch_size, valid=None):
+        if values.ndim > 1:
+            values = values.reshape(values.shape[0], -1).mean(dim=-1)
+        if valid is None:
+            valid = torch.ones_like(values, dtype=torch.bool)
+        totals = values.new_zeros(batch_size)
+        counts = values.new_zeros(batch_size)
+        totals.index_add_(0, batch_idx[valid], values[valid])
+        counts.index_add_(0, batch_idx[valid], torch.ones_like(values[valid]))
+        return totals / counts.clamp_min(1.0)
 
     def compute_shuffled_condition_losses(
         self,
@@ -4367,6 +4442,7 @@ class ClassifierFreeGuidance(FlowMol):
         g: dgl.DGLGraph,
         condition_mode: str = 'mixed',
         collect_intuitive_metrics: bool = False,
+        return_per_molecule_losses: bool = False,
     ):
         """Compute CTMC denoising losses under a selected conditioning policy.
 
@@ -4467,6 +4543,7 @@ class ClassifierFreeGuidance(FlowMol):
 
         # compute losses
         losses = {}
+        per_molecule_losses = {}
         for feat_idx, feat in enumerate(self.canonical_feat_order):
 
             if self.time_scaled_loss:
@@ -4490,6 +4567,26 @@ class ClassifierFreeGuidance(FlowMol):
                     and feat in ['a', 'c', 'e']
                 ),
             )
+            if return_per_molecule_losses:
+                if feat == "x":
+                    element_loss = F.mse_loss(vf_output[feat], target, reduction="none")
+                    valid = None
+                else:
+                    loss_module = self.loss_fn_dict[feat]
+                    element_loss = F.cross_entropy(
+                        vf_output[feat], target, weight=getattr(loss_module, "weight", None),
+                        ignore_index=-100, reduction="none",
+                    )
+                    valid = target.ne(-100)
+                item_batch_idx = edge_batch_idx[upper_edge_mask] if feat == "e" else node_batch_idx
+                if self.time_scaled_loss:
+                    element_weight = weight
+                    while torch.is_tensor(element_weight) and element_weight.ndim < element_loss.ndim:
+                        element_weight = element_weight.unsqueeze(-1)
+                    element_loss = element_loss * element_weight
+                per_molecule_losses[feat] = self._mean_per_molecule(
+                    element_loss, item_batch_idx, batch_size, valid
+                )
 
         if self.valence_loss_weight > 0.0:
             losses['valence'] = self._expected_valence_loss(
@@ -4508,6 +4605,8 @@ class ClassifierFreeGuidance(FlowMol):
                 )
             )
 
+        if return_per_molecule_losses:
+            return losses, per_molecule_losses
         return losses
 
     @torch.no_grad()
@@ -5263,6 +5362,7 @@ def model_from_config(config: dict, seed_ckpt: str | Path | None = None) -> Clas
         'p_uncond': guidance.get('p_uncond', 0.2),
         'condition_margin': guidance.get('condition_margin', 0.0),
         'condition_margin_weight': guidance.get('condition_margin_weight', 0.0),
+        "condition_margin_distance_cap": guidance.get("condition_margin_distance_cap", 2.0),
         **config.get('mol_fm', {}),
     }
 

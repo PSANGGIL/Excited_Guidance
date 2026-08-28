@@ -27,9 +27,11 @@ guidance:
   guidance_type: classifier_free_guidance
   # First establish conditional response before re-enabling CFG.
   p_uncond: 0.0
-  # Correct-condition loss must beat the same corruption with shuffled targets.
+  # Correct-condition loss must beat the same corruption with a distant in-batch target.
+  # The required margin scales with normalized property distance.
   condition_margin: 0.05
   condition_margin_weight: 0.5
+  condition_margin_distance_cap: 2.0
 
 interpolant_scheduler:
   schedule_type:
@@ -148,6 +150,8 @@ vector_field:
   rbf_dmax: 14
   rbf_dim: 24
   n_cp_feats: 4
+  # Re-inject property information after every GVP block.
+  condition_film_enabled: true
   stochasticity: 10.0
   high_confidence_threshold: 0.0
 

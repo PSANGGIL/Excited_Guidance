@@ -10,6 +10,7 @@ from model import (
     CFGVectorField,
     ClassifierFreeGuidance,
     EndpointVectorField,
+    EquivariantConditionFiLM,
     FlowMol,
     InterpolantScheduler,
     build_edge_idxs,
@@ -112,7 +113,50 @@ class UpdaterExecutionTests(unittest.TestCase):
                     )
 
 
+class ConditionFiLMTests(unittest.TestCase):
+    def test_zero_initialized_film_is_identity(self):
+        film = EquivariantConditionFiLM(property_dim=5, scalar_dim=7, vector_dim=3)
+        scalars = torch.randn(4, 7)
+        vectors = torch.randn(4, 3, 3)
+        properties = torch.randn(2, 5)
+        batch_idx = torch.tensor([0, 0, 1, 1])
+        actual_scalars, actual_vectors = film(scalars, vectors, properties, batch_idx)
+        self.assertTrue(torch.equal(actual_scalars, scalars))
+        self.assertTrue(torch.equal(actual_vectors, vectors))
+
+    def test_film_vector_scaling_commutes_with_rotation(self):
+        film = EquivariantConditionFiLM(property_dim=2, scalar_dim=2, vector_dim=2)
+        with torch.no_grad():
+            film.modulation[-1].bias[-2:] = torch.tensor([0.5, -0.25])
+        scalars = torch.randn(2, 2)
+        vectors = torch.randn(2, 2, 3)
+        properties = torch.randn(1, 2)
+        batch_idx = torch.zeros(2, dtype=torch.long)
+        rotation = torch.tensor([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+        _, transformed = film(scalars, vectors, properties, batch_idx)
+        _, transformed_rotated = film(scalars, vectors @ rotation.T, properties, batch_idx)
+        self.assertTrue(torch.allclose(transformed_rotated, transformed @ rotation.T))
+
+
 class CFGProbabilityTests(unittest.TestCase):
+    def test_hard_negative_uses_most_distant_property(self):
+        indices, distances = ClassifierFreeGuidance.hard_negative_indices(
+            torch.tensor([0.0, 1.0, 4.0])
+        )
+        self.assertTrue(torch.equal(indices, torch.tensor([2, 2, 0])))
+        self.assertTrue(torch.equal(distances, torch.tensor([4.0, 3.0, 4.0])))
+
+    def test_distance_scaled_margin_has_per_molecule_gradients(self):
+        correct = torch.tensor([1.0, 1.0], requires_grad=True)
+        negative = torch.tensor([1.02, 1.20], requires_grad=True)
+        required = torch.tensor([0.05, 0.10])
+        loss = ClassifierFreeGuidance.condition_margin_loss(correct, negative, required)
+        self.assertAlmostEqual(float(loss), 0.015, places=6)
+        loss.backward()
+        self.assertTrue(torch.allclose(correct.grad, torch.tensor([0.5, 0.0])))
+        self.assertTrue(torch.allclose(negative.grad, torch.tensor([-0.5, 0.0])))
+
+
     def test_condition_margin_penalizes_insufficient_condition_gain(self):
         correct = torch.tensor(1.0, requires_grad=True)
         shuffled = torch.tensor(1.02, requires_grad=True)

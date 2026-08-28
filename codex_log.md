@@ -146,3 +146,20 @@ codex resume 01a041d0-db57-7c53-b974-ec88fac4192b
 - 실제 조건 성능 판정은 predictor가 아니라 xTB/sTDA의 S1 OS로 수행
 - predictor는 독립 validation 성능과 uncertainty가 충분히 검증된 경우에만 보조 guidance/reranking 용도로 제한 검토
 - predictor 사용 시에도 ensemble/uncertainty 필터와 실제 sTDA 최종 검증이 필수
+
+
+## 2026-08-28 — Per-block FiLM + molecule-wise hard-negative margin 구현
+
+- 새 브랜치 `codex/film-hard-negative-conditioning` 생성
+- frozen OS predictor 없이 조건 반영 구조만 개선
+- property embedding을 모든 GVP convolution 뒤에 FiLM으로 재주입
+- scalar feature에는 scale+shift, vector channel에는 invariant scale만 적용해 E(3) 등변성 보존
+- FiLM 마지막 projection은 zero initialization해 초기 동작을 identity로 설정
+- 기존 batch-roll/aggregate margin을 분자별 denoising loss 기반 hard-negative margin으로 교체
+- 각 분자는 배치 내 normalized property 거리가 가장 먼 target을 negative로 선택
+- 요구 margin은 property distance에 비례하며 `condition_margin_distance_cap`으로 상한 적용
+- correct/negative pass는 conditional mode와 RNG 복원으로 같은 time/corruption을 공유
+- 진단 metric 추가: negative distance, active margin fraction, correct-vs-negative loss gain
+- 검증: 관련 unittest 15개 통과, config.example 모델 구성 통과
+- 실제 데이터 2분자 hard-negative training forward/backward 통과: 모든 loss finite, FiLM gradient 연결 확인
+- 전체 configured batch CPU forward는 메모리 한계(code 137)로 완료하지 못했으며 GPU 검증 대상
