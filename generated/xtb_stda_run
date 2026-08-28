@@ -42,11 +42,14 @@ chmod +x run_single.sh
 # 2. xargs를 이용한 병렬 실행
 # -n 1 : 한 번에 한 파일씩 run_single.sh에 넘김
 # -P 8 : 동시에 실행할 병렬 작업(Job)의 개수 (서버 코어 수에 맞게 조절)
-find . -maxdepth 1 -type f -name '*.sdf' -print0 \
-    | sort -z \
-    | xargs -0 -r -n 1 -P 8 ./run_single.sh
-
-echo "모든 병렬 계산이 종료되었습니다."
+if [ "$1" != "--render-only" ]; then
+    find . -maxdepth 1 -type f -name '*.sdf' -print0 \
+        | sort -z \
+        | xargs -0 -r -n 1 -P 8 ./run_single.sh
+    echo "모든 병렬 계산이 종료되었습니다."
+else
+    echo "[계산 생략] 기존 sTDA 로그에서 CSV와 PNG만 다시 생성합니다."
+fi
 
 # 3. 모든 병렬 계산이 끝난 뒤 STDA 결과를 Excel로 취합
 # 각 *_stda.log의 state 1~10 중 oscillator strength(fL)가 가장 큰 행을 선택한다.
@@ -146,3 +149,221 @@ print(
     f"(성공 {success_count}, 파싱 실패 {len(result_rows) - success_count})"
 )
 PY
+# 4. 분자 ID와 state 1~10 중 oscillator strength top-3를 표시한 그림 생성
+# RDKit Python 자동 탐색. 찾지 못하면 RDKIT_PYTHON 환경변수로 지정한다.
+rdkit_python="$RDKIT_PYTHON"
+if [ -z "$rdkit_python" ]; then
+    for candidate in python3 python; do
+        if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import rdkit' >/dev/null 2>&1; then
+            rdkit_python="$candidate"
+            break
+        fi
+    done
+fi
+
+if [ -z "$rdkit_python" ]; then
+    echo "[PNG 생성 건너뜀] RDKit Python을 찾지 못했습니다. RDKIT_PYTHON을 지정하세요."
+else
+"$rdkit_python" - << 'PY'
+from __future__ import annotations
+
+import csv
+import re
+from pathlib import Path
+
+from rdkit import Chem, RDLogger
+from rdkit.Chem import Draw
+from PIL import Image, ImageDraw, ImageFont
+
+STATE_LIMIT = 10
+TOP_K = 3
+PER_ROW = 2
+PER_PAGE = 8
+ROW_PATTERN = re.compile(
+    r"^\s*(\d+)\s+"
+    r"([-+]?\d+(?:\.\d+)?(?:[Ee][-+]?\d+)?)\s+"
+    r"([-+]?\d+(?:\.\d+)?(?:[Ee][-+]?\d+)?)\s+"
+    r"([-+]?\d+(?:\.\d+)?(?:[Ee][-+]?\d+)?)\b"
+)
+RDLogger.DisableLog("rdApp.*")
+
+
+def top_three(log_path: Path):
+    found_header = False
+    states = []
+    for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if " ".join(line.split()).startswith("state eV nm fL"):
+            found_header = True
+            continue
+        if not found_header:
+            continue
+        match = ROW_PATTERN.match(line)
+        if match is None:
+            if states:
+                break
+            continue
+        state = int(match.group(1))
+        if state > STATE_LIMIT:
+            break
+        states.append(
+            {
+                "state": state,
+                "energy_eV": float(match.group(2)),
+                "wavelength_nm": float(match.group(3)),
+                "os": float(match.group(4)),
+            }
+        )
+    return sorted(states, key=lambda row: (-row["os"], row["state"]))[:TOP_K]
+
+
+def smiles_by_id():
+    path = Path("..").resolve() / "generated.csv"
+    if not path.exists():
+        return {}
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        return {
+            row["generation_index"].zfill(5): row["canonical_smiles"]
+            for row in csv.DictReader(handle)
+            if row.get("canonical_smiles")
+        }
+
+
+def molecule_for(molecule_id, smiles_map):
+    if molecule_id in smiles_map:
+        molecule = Chem.MolFromSmiles(smiles_map[molecule_id])
+        if molecule is not None:
+            return molecule
+    path = Path(f"{molecule_id}.sdf")
+    if not path.exists():
+        return None
+    supplier = Chem.SDMolSupplier(str(path), removeHs=True, sanitize=False)
+    if not supplier or supplier[0] is None:
+        return None
+    molecule = supplier[0]
+    try:
+        Chem.SanitizeMol(molecule)
+    except Exception:
+        pass
+    return molecule
+
+
+smiles_map = smiles_by_id()
+items = []
+csv_rows = []
+for log_path in sorted(Path(".").glob("*/*_stda.log")):
+    molecule_id = log_path.parent.name.zfill(5)
+    states = top_three(log_path)
+    molecule = molecule_for(molecule_id, smiles_map)
+    if not states or molecule is None:
+        print(f"[그림 제외] {molecule_id}: 구조 또는 state 1-10 결과 없음")
+        continue
+    legend = [f"ID: {molecule_id}"]
+    for rank, row in enumerate(states, 1):
+        legend.append(f"#{rank} S{row['state']}  OS={row['os']:.4f}")
+        csv_rows.append(
+            (
+                f"{molecule_id}.sdf",
+                str(log_path),
+                rank,
+                row["state"],
+                row["energy_eV"],
+                row["wavelength_nm"],
+                row["os"],
+            )
+        )
+    items.append((molecule, "\n".join(legend)))
+
+with Path("stda_top3_os_state1-10.csv").open(
+    "w", newline="", encoding="utf-8-sig"
+) as handle:
+    writer = csv.writer(handle)
+    writer.writerow(
+        (
+            "molecule_file",
+            "log_file",
+            "os_rank",
+            "state",
+            "energy_eV",
+            "wavelength_nm",
+            "oscillator_strength",
+        )
+    )
+    writer.writerows(csv_rows)
+
+PANEL_WIDTH = 900
+STRUCTURE_HEIGHT = 560
+FOOTER_HEIGHT = 180
+PANEL_HEIGHT = STRUCTURE_HEIGHT + FOOTER_HEIGHT
+FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+BOLD_FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+TITLE_FONT = ImageFont.truetype(BOLD_FONT_PATH, 32)
+OS_FONT = ImageFont.truetype(FONT_PATH, 28)
+
+options = Draw.MolDrawOptions()
+options.padding = 0.04
+options.bondLineWidth = 2.0
+options.minFontSize = 18
+options.maxFontSize = 32
+
+
+def render_panel(record):
+    molecule, legend = record
+    structure = Draw.MolToImage(
+        molecule,
+        size=(PANEL_WIDTH, STRUCTURE_HEIGHT),
+        options=options,
+    ).convert("RGB")
+    panel = Image.new("RGB", (PANEL_WIDTH, PANEL_HEIGHT), "white")
+    panel.paste(structure, (0, 0))
+    painter = ImageDraw.Draw(panel)
+    painter.rectangle(
+        (0, STRUCTURE_HEIGHT, PANEL_WIDTH, PANEL_HEIGHT),
+        fill=(245, 247, 250),
+        outline=(180, 185, 190),
+        width=2,
+    )
+    lines = legend.splitlines()
+    painter.text((24, STRUCTURE_HEIGHT + 10), lines[0], fill="black", font=TITLE_FONT)
+    for line_index, line in enumerate(lines[1:4]):
+        painter.text(
+            (24, STRUCTURE_HEIGHT + 52 + line_index * 38),
+            line,
+            fill="black",
+            font=OS_FONT,
+        )
+    return panel
+
+
+def save_grid(records, output):
+    panels = [render_panel(record) for record in records]
+    columns = min(PER_ROW, len(panels))
+    rows = (len(panels) + columns - 1) // columns
+    image = Image.new(
+        "RGB",
+        (columns * PANEL_WIDTH, rows * PANEL_HEIGHT),
+        "white",
+    )
+    for index, panel in enumerate(panels):
+        image.paste(
+            panel,
+            ((index % columns) * PANEL_WIDTH, (index // columns) * PANEL_HEIGHT),
+        )
+    image.save(output)
+    print(f"[PNG 저장 완료] {Path(output).resolve()} ({len(records)} molecules)")
+
+
+if items:
+    save_grid(items, "stda_top3_os_grid.png")
+    molecule_dir = Path("stda_top3_os_molecules")
+    molecule_dir.mkdir(exist_ok=True)
+    for molecule, legend in items:
+        molecule_id = legend.splitlines()[0].split(":", 1)[1].strip()
+        save_grid([(molecule, legend)], molecule_dir / f"{molecule_id}.png")
+    for page, start in enumerate(range(0, len(items), PER_PAGE), 1):
+        save_grid(
+            items[start : start + PER_PAGE],
+            f"stda_top3_os_grid_page{page:03d}.png",
+        )
+print(f"[top-3 CSV 저장 완료] {len(csv_rows)} rows")
+PY
+fi
