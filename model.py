@@ -4383,6 +4383,7 @@ class ClassifierFreeGuidance(FlowMol):
         )
         correct_total = self._combine_per_molecule_losses(correct_per_molecule)
         negative_total = self._combine_per_molecule_losses(negative_per_molecule)
+        negative_distance = negative_distance.to(correct_total.device)
         required_margin = self.condition_margin * negative_distance.clamp(max=self.condition_margin_distance_cap)
         losses["condition_margin"] = self.condition_margin_loss(correct_total, negative_total, required_margin)
         self._last_condition_training_metrics = {
