@@ -163,3 +163,15 @@ codex resume 01a041d0-db57-7c53-b974-ec88fac4192b
 - 검증: 관련 unittest 15개 통과, config.example 모델 구성 통과
 - 실제 데이터 2분자 hard-negative training forward/backward 통과: 모든 loss finite, FiLM gradient 연결 확인
 - 전체 configured batch CPU forward는 메모리 한계(code 137)로 완료하지 못했으며 GPU 검증 대상
+
+
+## 2026-08-29 — FiLM hard-negative 학습 시작
+
+- 최초 `max_num_edges=2,000,000` 실행은 hard-negative 이중 forward가 GPU 174.8/178.3 GiB를 사용해 첫 batch에서 OOM
+- `max_num_edges=1,000,000` 첫 재시도에서 condition diagnostic의 CPU/GPU device mismatch 발견
+- `negative_distance`를 loss device로 이동하도록 수정하고 commit `76deacf` 생성
+- 최종 run: `runs/os_cfg_film_hardneg_e1m_fix_20260829_043256`
+- 로그: `logs/train_film_hardneg_e1m_fix_20260829.log`
+- fresh start, seed 42, W&B disabled, train edge budget 1,000,000
+- sanity validation 통과 후 epoch 0 학습 진행 확인
+- GPU 약 96,022 MiB/183,359 MiB, utilization 82%; 초기 60/736 step까지 정상 진행
