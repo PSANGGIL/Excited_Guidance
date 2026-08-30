@@ -187,3 +187,8 @@ codex resume 01a041d0-db57-7c53-b974-ec88fac4192b
 - 기존 full run 약 96,508 MiB 위에서 총 peak 113,596 MiB 측정
 - 테스트 프로세스 추가 peak 약 17,088 MiB로 B200 전체 183,359 MiB의 약 9.3%
 - 10 train batches와 validation, checkpoint 저장까지 정상 완료
+- 장기 학습 launcher `run_curriculum_10pct_train.sh` 추가
+- 장기 run: `runs/os_cfg_curriculum_10pct_train_20260830_063839`
+- 로그: `logs/train_curriculum_10pct_20260830.log`
+- `setsid -f nohup`으로 분리 실행, PID 3558362
+- 실제 장기 batch에서 약 19,118 MiB 사용(전체 B200의 약 10.4%), epoch 0 정상 진행
