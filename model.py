@@ -4316,6 +4316,11 @@ class ClassifierFreeGuidance(FlowMol):
                  condition_margin: float = 0.0,
                  condition_margin_weight: float = 0.0,
                  condition_margin_distance_cap: float = 2.0,
+                 condition_negative_curriculum_enabled: bool = False,
+                 condition_negative_curriculum_epochs=(5, 15),
+                 condition_negative_mix_initial=(0.0, 0.2, 0.8),
+                 condition_negative_mix_middle=(0.2, 0.4, 0.4),
+                 condition_negative_mix_final=(0.5, 0.3, 0.2),
                  **kwargs):
         if not 0.0 <= float(p_uncond) <= 1.0:
             raise ValueError(f"p_uncond must be in [0, 1], got {p_uncond}")
@@ -4332,11 +4337,35 @@ class ClassifierFreeGuidance(FlowMol):
         self.condition_margin = float(condition_margin)
         self.condition_margin_weight = float(condition_margin_weight)
         self.condition_margin_distance_cap = float(condition_margin_distance_cap)
+        self.condition_negative_curriculum_enabled = bool(
+            condition_negative_curriculum_enabled
+        )
+        curriculum_epochs = tuple(int(epoch) for epoch in condition_negative_curriculum_epochs)
+        if len(curriculum_epochs) != 2 or curriculum_epochs[0] < 0 or curriculum_epochs[1] <= curriculum_epochs[0]:
+            raise ValueError(
+                "condition_negative_curriculum_epochs must contain two increasing "
+                "non-negative epoch milestones"
+            )
+        self.condition_negative_curriculum_epochs = curriculum_epochs
+        self.condition_negative_mix_initial = self._validate_negative_mix(
+            condition_negative_mix_initial, "condition_negative_mix_initial"
+        )
+        self.condition_negative_mix_middle = self._validate_negative_mix(
+            condition_negative_mix_middle, "condition_negative_mix_middle"
+        )
+        self.condition_negative_mix_final = self._validate_negative_mix(
+            condition_negative_mix_final, "condition_negative_mix_final"
+        )
         self.save_hyperparameters({
             "p_uncond": self.p_uncond,
             "condition_margin": self.condition_margin,
             "condition_margin_weight": self.condition_margin_weight,
             "condition_margin_distance_cap": self.condition_margin_distance_cap,
+            "condition_negative_curriculum_enabled": self.condition_negative_curriculum_enabled,
+            "condition_negative_curriculum_epochs": self.condition_negative_curriculum_epochs,
+            "condition_negative_mix_initial": self.condition_negative_mix_initial,
+            "condition_negative_mix_middle": self.condition_negative_mix_middle,
+            "condition_negative_mix_final": self.condition_negative_mix_final,
         })
 
         # Create SetEmbeddingType controller
@@ -4374,7 +4403,9 @@ class ClassifierFreeGuidance(FlowMol):
         torch.random.set_rng_state(cpu_rng_state)
         if cuda_rng_state is not None:
             torch.cuda.set_rng_state(cuda_rng_state, g.device)
-        negative_indices, negative_distance = self.hard_negative_indices(g.prop)
+        negative_indices, negative_distance, negative_band = self.condition_negative_indices(
+            g.prop
+        )
         negative_graph = self._local_graph_copy(g)
         negative_graph.prop = g.prop[negative_indices].clone()
         _, negative_per_molecule = self(
@@ -4390,8 +4421,47 @@ class ClassifierFreeGuidance(FlowMol):
             "train_condition_negative_distance": negative_distance.mean().detach(),
             "train_condition_margin_active_fraction": (correct_total - negative_total + required_margin > 0).float().mean().detach(),
             "train_condition_loss_gain": (negative_total - correct_total).mean().detach(),
+            "train_condition_negative_near_fraction": (negative_band == 0).float().mean().detach(),
+            "train_condition_negative_medium_fraction": (negative_band == 1).float().mean().detach(),
+            "train_condition_negative_far_fraction": (negative_band == 2).float().mean().detach(),
         }
         return losses
+
+    @staticmethod
+    def _validate_negative_mix(values, name):
+        mix = tuple(float(value) for value in values)
+        if len(mix) != 3 or any(value < 0.0 for value in mix):
+            raise ValueError(f"{name} must contain three non-negative values")
+        if not math.isclose(sum(mix), 1.0, rel_tol=0.0, abs_tol=1.0e-6):
+            raise ValueError(f"{name} must sum to 1.0, got {sum(mix)}")
+        return mix
+
+    def negative_mix_for_epoch(self, epoch: int) -> Tuple[float, float, float]:
+        first_epoch, final_epoch = self.condition_negative_curriculum_epochs
+        if epoch <= first_epoch:
+            progress = float(epoch) / max(first_epoch, 1)
+            start, end = self.condition_negative_mix_initial, self.condition_negative_mix_middle
+        elif epoch < final_epoch:
+            progress = float(epoch - first_epoch) / float(final_epoch - first_epoch)
+            start, end = self.condition_negative_mix_middle, self.condition_negative_mix_final
+        else:
+            return self.condition_negative_mix_final
+        return tuple(
+            start[index] + progress * (end[index] - start[index])
+            for index in range(3)
+        )
+
+    def condition_negative_indices(
+        self, properties: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if not self.condition_negative_curriculum_enabled:
+            indices, distances = self.hard_negative_indices(properties)
+            bands = torch.full_like(indices, 2)
+            return indices, distances, bands
+        mix = self.negative_mix_for_epoch(int(self.current_epoch))
+        return self.mixed_negative_indices(
+            properties, mix, offset=int(self.global_step)
+        )
 
     @staticmethod
     def condition_margin_loss(correct_loss, shuffled_loss, margin):
@@ -4405,6 +4475,43 @@ class ClassifierFreeGuidance(FlowMol):
         distances.fill_diagonal_(-1.0)
         indices = distances.argmax(dim=1)
         return indices, distances.gather(1, indices.unsqueeze(1)).squeeze(1)
+
+    @staticmethod
+    def mixed_negative_indices(
+        properties: torch.Tensor,
+        mix: Tuple[float, float, float],
+        offset: int = 0,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Select near/medium/far in-batch negatives without consuming RNG state."""
+        values = properties.reshape(properties.shape[0], -1).float()
+        batch_size = values.shape[0]
+        distances = torch.cdist(values, values, p=1)
+        distances.fill_diagonal_(float("inf"))
+        ranked_indices = distances.argsort(dim=1)
+        candidate_count = batch_size - 1
+        near_indices = ranked_indices[:, 0]
+        medium_indices = ranked_indices[:, candidate_count // 2]
+        far_indices = ranked_indices[:, candidate_count - 1]
+        candidates = torch.stack((near_indices, medium_indices, far_indices), dim=1)
+
+        positions = (
+            torch.arange(batch_size, device=values.device, dtype=torch.float32)
+            + int(offset)
+        ).remainder(max(batch_size, 1)) / max(batch_size, 1)
+        near_cutoff = float(mix[0])
+        medium_cutoff = near_cutoff + float(mix[1])
+        bands = torch.where(
+            positions < near_cutoff,
+            torch.zeros_like(positions, dtype=torch.long),
+            torch.where(
+                positions < medium_cutoff,
+                torch.ones_like(positions, dtype=torch.long),
+                torch.full_like(positions, 2, dtype=torch.long),
+            ),
+        )
+        indices = candidates.gather(1, bands.unsqueeze(1)).squeeze(1)
+        selected_distances = distances.gather(1, indices.unsqueeze(1)).squeeze(1)
+        return indices, selected_distances, bands
 
     def _combine_per_molecule_losses(self, losses):
         total = torch.zeros_like(next(iter(losses.values())))
@@ -5364,6 +5471,21 @@ def model_from_config(config: dict, seed_ckpt: str | Path | None = None) -> Clas
         'condition_margin': guidance.get('condition_margin', 0.0),
         'condition_margin_weight': guidance.get('condition_margin_weight', 0.0),
         "condition_margin_distance_cap": guidance.get("condition_margin_distance_cap", 2.0),
+        "condition_negative_curriculum_enabled": guidance.get(
+            "condition_negative_curriculum_enabled", False
+        ),
+        "condition_negative_curriculum_epochs": guidance.get(
+            "condition_negative_curriculum_epochs", (5, 15)
+        ),
+        "condition_negative_mix_initial": guidance.get(
+            "condition_negative_mix_initial", (0.0, 0.2, 0.8)
+        ),
+        "condition_negative_mix_middle": guidance.get(
+            "condition_negative_mix_middle", (0.2, 0.4, 0.4)
+        ),
+        "condition_negative_mix_final": guidance.get(
+            "condition_negative_mix_final", (0.5, 0.3, 0.2)
+        ),
         **config.get('mol_fm', {}),
     }
 

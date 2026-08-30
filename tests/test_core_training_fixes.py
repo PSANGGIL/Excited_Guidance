@@ -146,6 +146,30 @@ class CFGProbabilityTests(unittest.TestCase):
         self.assertTrue(torch.equal(indices, torch.tensor([2, 2, 0])))
         self.assertTrue(torch.equal(distances, torch.tensor([4.0, 3.0, 4.0])))
 
+    def test_mixed_negative_selects_requested_distance_bands(self):
+        properties = torch.tensor([0.0, 1.0, 3.0, 10.0])
+        near, near_distance, near_band = ClassifierFreeGuidance.mixed_negative_indices(
+            properties, (1.0, 0.0, 0.0)
+        )
+        far, far_distance, far_band = ClassifierFreeGuidance.mixed_negative_indices(
+            properties, (0.0, 0.0, 1.0)
+        )
+        self.assertTrue(torch.equal(near, torch.tensor([1, 0, 1, 2])))
+        self.assertTrue(torch.equal(far, torch.tensor([3, 3, 3, 0])))
+        self.assertTrue(torch.all(near_distance <= far_distance))
+        self.assertTrue(torch.equal(near_band, torch.zeros(4, dtype=torch.long)))
+        self.assertTrue(torch.equal(far_band, torch.full((4,), 2, dtype=torch.long)))
+
+    def test_negative_curriculum_interpolates_mixes(self):
+        model = object.__new__(ClassifierFreeGuidance)
+        model.condition_negative_curriculum_epochs = (5, 15)
+        model.condition_negative_mix_initial = (0.0, 0.2, 0.8)
+        model.condition_negative_mix_middle = (0.2, 0.4, 0.4)
+        model.condition_negative_mix_final = (0.5, 0.3, 0.2)
+        self.assertEqual(model.negative_mix_for_epoch(0), (0.0, 0.2, 0.8))
+        self.assertEqual(model.negative_mix_for_epoch(5), (0.2, 0.4, 0.4))
+        self.assertEqual(model.negative_mix_for_epoch(15), (0.5, 0.3, 0.2))
+
     def test_distance_scaled_margin_has_per_molecule_gradients(self):
         correct = torch.tensor([1.0, 1.0], requires_grad=True)
         negative = torch.tensor([1.02, 1.20], requires_grad=True)

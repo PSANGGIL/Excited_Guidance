@@ -32,6 +32,13 @@ guidance:
   condition_margin: 0.05
   condition_margin_weight: 0.5
   condition_margin_distance_cap: 2.0
+  # Gradually replace easy far negatives with medium and near-condition negatives.
+  # Each mix is [near, medium, far] and is linearly interpolated at the milestones.
+  condition_negative_curriculum_enabled: true
+  condition_negative_curriculum_epochs: [5, 15]
+  condition_negative_mix_initial: [0.0, 0.2, 0.8]
+  condition_negative_mix_middle: [0.2, 0.4, 0.4]
+  condition_negative_mix_final: [0.5, 0.3, 0.2]
 
 interpolant_scheduler:
   schedule_type:
