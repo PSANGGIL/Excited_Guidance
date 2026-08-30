@@ -175,3 +175,15 @@ codex resume 01a041d0-db57-7c53-b974-ec88fac4192b
 - fresh start, seed 42, W&B disabled, train edge budget 1,000,000
 - sanity validation 통과 후 epoch 0 학습 진행 확인
 - GPU 약 96,022 MiB/183,359 MiB, utilization 82%; 초기 60/736 step까지 정상 진행
+
+
+## 2026-08-30 — Condition negative curriculum 및 10% GPU smoke profile
+
+- 브랜치 `codex/condition-negative-curriculum`에서 far→medium→near negative curriculum 구현
+- curriculum 커밋 `c053539`을 원격 브랜치에 푸시
+- 별도 smoke launcher `run_curriculum_10pct_smoke.sh` 추가
+- 테스트 설정: batch size 128, edge budget 220,000, property embedding 128
+- vector field: scalar 128, edge 64, vector 8, molecule updates 3
+- 기존 full run 약 96,508 MiB 위에서 총 peak 113,596 MiB 측정
+- 테스트 프로세스 추가 peak 약 17,088 MiB로 B200 전체 183,359 MiB의 약 9.3%
+- 10 train batches와 validation, checkpoint 저장까지 정상 완료
