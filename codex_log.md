@@ -192,3 +192,21 @@ codex resume 01a041d0-db57-7c53-b974-ec88fac4192b
 - 로그: `logs/train_curriculum_10pct_20260830.log`
 - `setsid -f nohup`으로 분리 실행, PID 3558362
 - 실제 장기 batch에서 약 19,118 MiB 사용(전체 B200의 약 10.4%), epoch 0 정상 진행
+
+
+## 2026-09-02 — Kekulé bond representation 분리 구현
+
+- 새 브랜치 `codex/kekule-bond-representation` 생성
+- 모델이 aromatic을 독립 class로 생성하지 않고 `none/single/double/triple` 4개 class만 학습하도록 설정
+- 원본 `data_`는 보존하고 별도 `data_kekule` 디렉터리를 만드는 `prepare_kekule_dataset.py` 추가
+- RDKit Kekulization으로 aromatic bond를 원래 atom order에 정렬된 single/double 표현으로 변환하며 좌표·원자·전하·조건 property는 변경하지 않음
+- 변환 후 train edge marginal을 4개 class 기준으로 다시 계산
+- processed-data metadata에 `bond_representation: kekule`을 저장하고 config와 불일치하면 loader가 즉시 중단하도록 검증 추가
+- CTMC mask index를 하드코딩된 5가 아니라 실제 마지막 class로 처리
+- valence loss와 bond validation metric이 기존 5-class와 새 4-class를 모두 지원하도록 변경
+- 생성 결과의 single/double Kekulé graph는 RDKit sanitization에서 aromaticity를 다시 인식
+- synthetic benzene/기존 Kekulé/marginal 테스트 3개 통과
+- 실제 train 250개 스모크 변환 통과: aromatic label 14,484개가 모두 single/double로 변환되고 label 4는 0개
+- 전체 split을 별도 `data_kekule` 디렉터리로 변환 완료; 원본 `data_`는 유지
+- loader 실검증: bond label 범위 1~3, edge feature 4차원, 새 p_e 합 1.0
+- 주의: atom permutation까지 포함한 SMILES canonicalization은 좌표 정렬을 깨뜨리므로 하지 않으며, 고정된 원본 atom order에서 RDKit의 결정적 Kekulé assignment를 사용

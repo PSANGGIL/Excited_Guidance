@@ -179,6 +179,21 @@ def materialize_dataset_metadata(config: dict, split: str | None = None) -> dict
                 f"config={resolve_atom_type_map(legacy_map)}, database={resolved_map}"
             )
 
+    configured_representation = dataset_config.get("bond_representation")
+    stored_representation = data_dict.get("bond_representation")
+    if configured_representation is not None:
+        if stored_representation is None:
+            raise ValueError(
+                f"{data_file} has no bond_representation metadata; refusing to "
+                f"load it as {configured_representation!r}"
+            )
+        if str(stored_representation) != str(configured_representation):
+            raise ValueError(
+                "Configured bond representation conflicts with processed data: "
+                f"config={configured_representation!r}, "
+                f"database={stored_representation!r}"
+            )
+
     dataset_config["processed_data_dir"] = str(processed_dir)
     dataset_config["atom_map"] = resolved_map
     dataset_config["metadata_source"] = str(data_file)
@@ -258,8 +273,19 @@ class MoleculeDataset(torch.utils.data.Dataset):
                 "atom_map",
                 "geometry_source",
                 "add_hydrogens",
+                "bond_representation",
             )
         }
+        configured_representation = self.dataset_config.get("bond_representation")
+        stored_representation = data_dict.get("bond_representation")
+        if configured_representation is not None and (
+            str(stored_representation) != str(configured_representation)
+        ):
+            raise ValueError(
+                "Configured bond representation conflicts with processed data: "
+                f"config={configured_representation!r}, "
+                f"database={stored_representation!r}"
+            )
 
         self.properties = None
         self.property_idx: int | None = None

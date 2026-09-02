@@ -1405,7 +1405,10 @@ def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str], exclud
 
     # get bond types and atom indicies for every edge, convert types from simplex to integer
     bond_types = g.edata['e_1'].argmax(dim=1)
-    bond_types[bond_types == 5] = 0 # set masked bonds to 0
+    if ctmc_mol:
+        # CTMC appends one mask class after the configured bond vocabulary.
+        mask_index = g.edata['e_1'].shape[-1] - 1
+        bond_types[bond_types == mask_index] = 0
     bond_src_idxs, bond_dst_idxs = g.edges()
 
     # get just the upper triangle of the adjacency matrix
@@ -3555,12 +3558,14 @@ class FlowMol(pl.LightningModule):
         edge_logits: torch.Tensor,
         upper_edge_mask: torch.Tensor,
     ) -> Dict[str, torch.Tensor]:
-        if edge_logits.shape[-1] != 5:
+        if edge_logits.shape[-1] not in (4, 5):
             raise ValueError(
-                "Valence loss expects bond classes "
-                "[none, single, double, triple, aromatic]"
+                "Valence loss expects [none, single, double, triple] with "
+                "an optional aromatic class"
             )
-        bond_orders = edge_logits.new_tensor([0.0, 1.0, 2.0, 3.0, 1.5])
+        bond_orders = edge_logits.new_tensor(
+            [0.0, 1.0, 2.0, 3.0, 1.5][:edge_logits.shape[-1]]
+        )
         probabilities = torch.softmax(edge_logits, dim=-1)
         expected_orders = (probabilities * bond_orders).sum(-1)
         selected_orders = bond_orders[probabilities.argmax(dim=-1)]
@@ -3673,11 +3678,12 @@ class FlowMol(pl.LightningModule):
         """Return bonded-edge and per-class diagnostics for masked edges."""
         predictions = logits.argmax(dim=-1)
         class_names = ('none', 'single', 'double', 'triple', 'aromatic')
-        if logits.shape[-1] != len(class_names):
+        if logits.shape[-1] not in (4, 5):
             raise ValueError(
-                "Bond diagnostics expect classes "
-                "[none, single, double, triple, aromatic]"
+                "Bond diagnostics expect [none, single, double, triple] with "
+                "an optional aromatic class"
             )
+        class_names = class_names[:logits.shape[-1]]
 
         metrics: Dict[str, torch.Tensor] = {}
         eps = logits.new_tensor(1.0e-12)

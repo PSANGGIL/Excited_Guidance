@@ -250,6 +250,17 @@ class BondMetricTests(unittest.TestCase):
         self.assertEqual(float(metrics["val_e_double_f1"]), 0.0)
         self.assertIn("val_e_macro_f1", metrics)
 
+    def test_kekule_four_class_metrics_have_no_aromatic_output(self):
+        model = FlowMol.__new__(FlowMol)
+        torch.nn.Module.__init__(model)
+        labels = torch.tensor([0, 1, 2, 3])
+        logits = F.one_hot(labels, num_classes=4).float() * 10.0
+
+        metrics = model._bond_classification_metrics(logits, labels)
+
+        self.assertEqual(float(metrics["val_e_macro_f1"]), 1.0)
+        self.assertNotIn("val_e_aromatic_f1", metrics)
+
 
 class CheckpointCallbackTests(unittest.TestCase):
     def test_latest_checkpoint_is_independent_from_top_k(self):

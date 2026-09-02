@@ -9,12 +9,15 @@ checkpointing:
 
 
 dataset:
-  processed_data_dir: /home/jovyan/cpu-only-1-datavol-1/psg/generation/STGG-AL/data/data_
+  processed_data_dir: /home/jovyan/cpu-only-1-datavol-1/psg/generation/STGG-AL/data/data_kekule
   dataset_name: csvmol
 
   n_atom_charges: 6
   charge_offset: 2
-  n_bond_types: 5
+  # Kekule representation: none, single, double, triple. Aromaticity is
+  # recovered by RDKit sanitization instead of being generated as class 4.
+  bond_representation: kekule
+  n_bond_types: 4
   train_split: train
   validate_processed_data: true
   conditioning:
