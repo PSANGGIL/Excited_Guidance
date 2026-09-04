@@ -192,3 +192,80 @@ codex resume 01a041d0-db57-7c53-b974-ec88fac4192b
 - 로그: `logs/train_curriculum_10pct_20260830.log`
 - `setsid -f nohup`으로 분리 실행, PID 3558362
 - 실제 장기 batch에서 약 19,118 MiB 사용(전체 B200의 약 10.4%), epoch 0 정상 진행
+## 2026-09-03 — 기존 5-class full-size best epoch 296 생성 재평가
+
+- 체크포인트 `epoch=296-step=218592.ckpt`, target f_osc 0.5, seed 45, all-guidance 1.0
+- 1,000개를 max batch size 32로 생성; 생성 프로세스 VRAM 약 4.3 GiB, OOM 없음
+- RDKit molecule construction 1,000/1,000, unresolved mask 0
+- sanitize 성공 4/1,000(0.4%), 그중 single-component/SMILES/SDF 성공 2/1,000(0.2%)
+- 실패 분류: explicit valence 801, Kekulize 195, sanitize 후 multifragment 2
+- 최종 2개는 모두 unique 및 train/val/test에 없는 novel molecule
+- epoch 144 결과(4/1,000 valid)와 비교해 validation loss 개선이 최종 화학적 validity 증가로 이어지지는 않음
+
+### 생성 성공 분자 구조 진단
+
+- ID 609: C30H17FN8O2S, MW 572.585, logP 6.362, TPSA 147.21, QED 0.155, 8 rings(방향족 7), formal charge/radical 0
+- ID 723: C28H17N5O3S, MW 503.543, logP 6.804, TPSA 109.69, QED 0.197, 방향족 ring 7, formal charge/radical 0
+- 두 구조 모두 비결합 원자 충돌은 없지만 raw 좌표의 일부 aromatic bond가 비정상적으로 김: ID 609 최대 1.646 Å, ID 723 최대 1.750 Å
+- ID 609에는 N-C-N 3-member smallest-ring basis와 RDKit이 보충한 implicit H 1개가 있어 구조적 신뢰도가 낮음
+- ID 723은 implicit H와 소형 ring이 없어 topology는 상대적으로 더 자연스럽지만 고평면성·높은 logP·긴 aromatic bond 때문에 geometry optimization 후 판단 필요
+- RDKit-valid만으로 안정성/OS를 판단할 수 없으며 xTB geometry optimization 및 sTDA 검증이 필요
+
+
+## 2026-09-03 — 기존 5-class full-size best epoch 334 재생성
+
+- 체크포인트 `epoch=334-step=246560.ckpt`, target f_osc 0.5, seed 46, all-guidance 1.0, max batch 32로 1,000개 생성
+- sanitize 성공 7/1,000(0.7%), single-component/SMILES/SDF 성공 5/1,000(0.5%)
+- 실패 분류: explicit valence 865, Kekulize 128, sanitize 후 multifragment 2
+- 최종 5개는 모두 unique이며 train/val/test에 없는 novel molecule
+- epoch 296 seed 45 결과의 sanitize 4개/SDF 2개보다 이번 seed에서는 증가했지만 표본이 작아 checkpoint 개선으로 단정할 수 없음
+- SampleAnalyzer의 `frac_valid_mols=0.022`는 CSV의 strict sanitize+single-component 기준과 정의가 달라 최종 성공률로 사용하지 않음
+
+
+## 2026-09-03 — epoch 334에서 10,000개 생성
+
+- target f_osc 0.5, seed 47, all-guidance 1.0, max batch 32; 약 1시간 11분 소요
+- sanitize 성공 69/10,000(0.69%), single-component/SMILES/SDF 성공 49/10,000(0.49%)
+- 실패 분류: explicit valence 8,656, Kekulize 1,275, sanitize 후 multifragment 20
+- 최종 49개는 모두 unique이며 train/val/test에 없는 novel molecule
+- 직전 1,000개 seed 46의 strict 성공률 0.5%와 거의 동일하여 epoch 334 모델의 strict 생성 성공률은 약 0.5%로 재현됨
+
+
+## 2026-09-03 — epoch 334 valid 49개 xTB/sTDA 평가
+
+- `xtb_env`의 xTB 6.7.1과 별도 xtb4stda/sTDA 실행파일을 사용, 기존 `generated/xtb_stda_run`을 8-way 병렬 실행
+- 49/49 xTB loose geometry optimization 수렴 및 정상 종료, 49/49 sTDA state 1~10 파싱 성공
+- state 1~10 중 최대 OS: 평균 0.6150, 중앙값 0.5282, 범위 0.0825~2.3214
+- 최대 OS가 target 0.5에서 0.05/0.1/0.2 이내: 8/13/18개
+- 학습 target과 직접 대응하는 S1 OS: 평균 0.1655, 중앙값 0.0513, 범위 0~1.4358
+- S1 OS가 target 0.5에서 0.05/0.1/0.2 이내: 3/3/4개
+- S1 근접 상위: 01674=0.5205, 01949=0.4671, 07399=0.4582
+- 기존 top-OS CSV는 S1이 아니라 state 1~10 최대값이므로 condition 반영률 평가에는 S1 값을 별도 사용해야 함
+- top-1/top-3 CSV, 전체 grid, 7개 page grid, 분자별 PNG 49개 생성 완료
+
+### state 1~10 OS top-5 기준 비교
+
+- 사용자 판단 기준에 따라 S1 고정이 아니라 각 분자의 state 1~10을 OS 내림차순 정렬해 top-5로 비교
+- rank별 OS 평균/중앙값: top1 0.6150/0.5282, top2 0.3330/0.2496, top3 0.2150/0.1571, top4 0.1567/0.1412, top5 0.1085/0.0717
+- top1 state는 S10·S3 각 8개, S2·S1·S9 각 6개 등으로 분산; S1이 top1인 분자는 6/49뿐
+- top-5 중 하나라도 target 0.5에서 0.05/0.1/0.2 이내인 분자: 13/24/29개
+- target 최접근 후보: 01094(S4, rank3, 0.5007), 03135(S7, rank3, 0.4953), 01674(S1, rank2, 0.5205)
+- top1 최대 후보: 05510(S9, 2.3214), 05092(S1, 1.4358), 03135(S2, 1.2991)
+- long-format `stda_top5_os_state1-10.csv`와 molecule별 wide-format `stda_top5_os_comparison_wide.csv` 생성
+
+
+## 2026-09-04 — 기존 5-class best epoch 483 생성 확인
+
+- target f_osc 0.5, seed 48, all-guidance 1.0, max batch 32로 1,000개 생성
+- sanitize 성공 7/1,000, single-component/SMILES/SDF 성공 6/1,000(0.6%)
+- 실패 분류: explicit valence 731, Kekulize 262, sanitize 후 multifragment 1
+- 최종 6개는 모두 unique 및 train/val/test에 없는 novel molecule
+- epoch 334의 1,000개 strict 성공 5개와 큰 차이는 없지만 valence 실패는 865→731로 감소하고 Kekulize 실패는 128→262로 증가
+
+
+## 2026-09-04 — 기존 5-class 모델 복원 기록 고정
+
+- 학습은 epoch 533에서 early stopping으로 정상 종료; best checkpoint는 epoch 483
+- `records/fullsize_5class_curriculum_recovery.md`에 source branch/commit, run config, checkpoint SHA-256, 종료 지표, 전체 generation 결과, xTB/sTDA 결과와 정확한 복원 명령 기록
+- 실제 학습 출처는 `codex/condition-negative-curriculum` commit `f6eebe3529139f2f56b5e4b61a78b81e3e58024a`
+- 별도 `codex/kekule-bond-representation`의 4-class config와 기존 5-class checkpoint가 혼용되지 않도록 saved run config를 authoritative config로 명시
